@@ -396,6 +396,9 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
     private LinearLayout buildToolbar(final AppCompatActivity activity) {
         LinearLayout bar = new LinearLayout(activity);
         bar.setOrientation(LinearLayout.HORIZONTAL);
+        // Force LTR so button order (back, forward, reload, +, tabs, menu)
+        // stays fixed regardless of the device's RTL (Hebrew) locale.
+        bar.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
         bar.setBackgroundColor(Color.parseColor("#E6060B18"));
 
         final TextView back = makeToolbarButton(activity, "‹");

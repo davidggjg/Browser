@@ -9,6 +9,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -416,6 +417,15 @@ public class TabWebViewManager {
         settings.setAllowContentAccess(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
 
+        // Google properties (YouTube, Search, etc.) detect the stock WebView's
+        // "; wv)" user-agent token and serve a degraded/blank page instead of
+        // the real site. Stripping it makes the UA look like plain mobile
+        // Chrome — same version, so it keeps updating itself with the device.
+        String defaultUa = settings.getUserAgentString();
+        if (defaultUa != null && defaultUa.contains("wv")) {
+            settings.setUserAgentString(defaultUa.replace("; wv)", ")").replace(" wv", ""));
+        }
+
         webView.addJavascriptInterface(new NativeBridge(tabId), "ZovexNative");
         webView.setWebViewClient(new TabWebViewClient(tabId));
         webView.setWebChromeClient(new TabWebChromeClient(tabId));
@@ -461,6 +471,26 @@ public class TabWebViewManager {
             evt.put("source", source);
             listener.onMediaDetected(evt);
         }
+    }
+
+    private String buildErrorHtml(String message) {
+        return "<!DOCTYPE html><html lang='he' dir='rtl'><head><meta charset='utf-8'>" +
+                "<meta name='viewport' content='width=device-width, initial-scale=1'>" +
+                "<style>" +
+                "body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;" +
+                "background:#020617;color:#e2e8f0;font-family:sans-serif;text-align:center;padding:2rem;box-sizing:border-box;}" +
+                "h1{font-size:1.1rem;margin:0 0 .5rem;} p{font-size:.85rem;color:#94a3b8;margin:0;direction:ltr;}" +
+                "</style></head><body>" +
+                "<h1>לא ניתן לטעון את הדף</h1>" +
+                "<p>" + escapeHtmlForError(message) + "</p>" +
+                "</body></html>";
+    }
+
+    private String escapeHtmlForError(String s) {
+        if (s == null) {
+            return "";
+        }
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     private String kindForUrl(String url) {
@@ -554,6 +584,15 @@ public class TabWebViewManager {
             } catch (Exception ignored) {
             }
             return super.shouldInterceptRequest(view, request);
+        }
+
+        @Override
+        public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+            super.onReceivedError(view, request, error);
+            if (request.isForMainFrame()) {
+                String message = error.getDescription() == null ? "" : error.getDescription().toString();
+                view.loadUrl("data:text/html;charset=utf-8," + Uri.encode(buildErrorHtml(message)));
+            }
         }
 
         @Override
