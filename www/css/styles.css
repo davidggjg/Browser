@@ -196,6 +196,12 @@ html, body {
 /* html[dir="rtl"] flips translateX direction naturally via `right` positioning above,
    so the knob still slides toward the "on" side correctly in RTL layout. */
 
+/* Clears the native top toolbar + progress bar — only applied when running
+   inside the Android app (html.native-app), never in a plain browser. */
+html.native-app .app-shell {
+  padding-top: calc(env(safe-area-inset-top, 0px) + 4.5rem);
+}
+
 /* ---------- Chrome views: tab switcher / source / media ---------- */
 .zovex-view.hidden {
   display: none;

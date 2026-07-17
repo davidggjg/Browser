@@ -7,7 +7,10 @@
 (function () {
   const SEARCH_STORAGE_KEY = 'zovex:searchDraft';
   const ONION_STORAGE_KEY = 'zovex:onionMode';
-  const SEARCH_ENGINE = 'https://duckduckgo.com/?q=';
+  // The JS-heavy main duckduckgo.com results page can fail to render in a
+  // bare WebView (same class of issue as Google/YouTube) — the lightweight
+  // server-rendered HTML endpoint always works, no JS required.
+  const SEARCH_ENGINE = 'https://html.duckduckgo.com/html/?q=';
 
   const html = document.documentElement;
   const searchForm = document.getElementById('searchForm');

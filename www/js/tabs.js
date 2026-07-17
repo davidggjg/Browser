@@ -362,6 +362,7 @@
     }
     if (isNative()) {
       registerNativeListeners();
+      document.documentElement.classList.add('native-app');
     }
   });
 
