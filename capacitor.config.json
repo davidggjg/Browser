@@ -1,0 +1,12 @@
+{
+  "appId": "com.zovexcore.browser",
+  "appName": "Zovex Core",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

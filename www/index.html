@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#020617">
+<title>Zovex Core — הדפדפן המאובטח</title>
+
+<link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+<link rel="preload" href="css/styles.css" as="style">
+<link rel="stylesheet" href="css/styles.css">
+
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+</head>
+<body class="min-h-screen overflow-x-hidden text-slate-100 antialiased selection:bg-cyan-500/30">
+
+  <!-- Decorative ambient background blobs (transform/opacity only animations) -->
+  <div class="bg-fx" aria-hidden="true">
+    <span class="blob blob-a"></span>
+    <span class="blob blob-b"></span>
+    <span class="blob blob-c"></span>
+  </div>
+
+  <div class="relative z-10 flex min-h-screen flex-col">
+
+    <!-- Top bar -->
+    <header class="flex items-center justify-between gap-3 px-4 py-4 sm:px-8">
+      <div class="flex items-center gap-2 opacity-90">
+        <img src="assets/logo.svg" alt="" class="h-7 w-7" width="28" height="28">
+        <span class="text-sm font-semibold tracking-wide text-slate-300">Zovex Core</span>
+      </div>
+
+      <label id="onionToggleWrap" class="onion-switch group" for="onionToggle">
+        <span class="hidden text-xs font-medium text-slate-300 sm:inline">מצב רשת אפלה / Tor</span>
+        <span class="onion-emoji" aria-hidden="true">🧅</span>
+        <input type="checkbox" id="onionToggle" class="peer sr-only">
+        <span class="onion-track">
+          <span class="onion-knob"></span>
+        </span>
+      </label>
+    </header>
+
+    <!-- Onion mode status banner -->
+    <div id="onionBanner" class="pointer-events-none mx-auto mt-1 hidden max-w-fit items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-4 py-1.5 text-xs font-medium text-emerald-300 opacity-0">
+      <span>🧅</span>
+      <span>מצב רשת אפלה פעיל — הניתוב מוצפן ומוסתר</span>
+    </div>
+
+    <!-- Main hero -->
+    <main class="flex flex-1 flex-col items-center justify-center px-4 pb-16 pt-4 sm:px-6">
+
+      <div class="mb-8 flex flex-col items-center gap-3 text-center">
+        <img src="assets/logo.svg" alt="Zovex Core" class="h-16 w-16 drop-shadow-[0_0_24px_rgba(34,211,238,0.35)] sm:h-20 sm:w-20">
+        <h1 class="brand-title text-5xl font-black tracking-tight sm:text-6xl">Zovex Core</h1>
+        <p class="text-sm text-slate-400 sm:text-base">גלישה מהירה, פרטית ומוצפנת — בלי פשרות.</p>
+      </div>
+
+      <!-- Search -->
+      <form id="searchForm" class="w-full max-w-2xl" autocomplete="off" role="search">
+        <div class="search-glass flex items-center gap-3 rounded-full px-5 py-4 sm:px-6 sm:py-5">
+          <svg class="h-5 w-5 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input
+            id="searchInput"
+            type="text"
+            inputmode="url"
+            placeholder="חפשו בעולם או הקלידו כתובת אתר…"
+            class="min-w-0 flex-1 bg-transparent text-base text-slate-100 placeholder:text-slate-500 focus:outline-none sm:text-lg"
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck="false"
+          >
+          <button type="submit" class="go-btn shrink-0 rounded-full px-4 py-2 text-sm font-semibold sm:px-5 sm:py-2.5" aria-label="חיפוש">
+            <span class="hidden sm:inline">חיפוש</span>
+            <svg class="h-4 w-4 sm:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 5 7 7-7 7"/></svg>
+          </button>
+        </div>
+        <p class="mt-3 text-center text-xs text-slate-500">חיבור מאובטח בלבד · HTTPS נאכף · ללא שמירת היסטוריה</p>
+      </form>
+
+      <!-- Bookmarks grid -->
+      <nav class="mt-10 grid w-full max-w-2xl grid-cols-2 gap-4 sm:grid-cols-4" aria-label="קיצורי דרך">
+        <a href="https://he.wikipedia.org" class="bookmark-card" data-url="https://he.wikipedia.org">
+          <span class="bookmark-icon">📚</span>
+          <span class="bookmark-label">ויקיפדיה</span>
+        </a>
+        <a href="https://github.com" class="bookmark-card" data-url="https://github.com">
+          <span class="bookmark-icon">💻</span>
+          <span class="bookmark-label">GitHub</span>
+        </a>
+        <a href="https://mail.google.com" class="bookmark-card" data-url="https://mail.google.com">
+          <span class="bookmark-icon">✉️</span>
+          <span class="bookmark-label">Gmail</span>
+        </a>
+        <a href="https://youtube.com" class="bookmark-card" data-url="https://youtube.com">
+          <span class="bookmark-icon">▶️</span>
+          <span class="bookmark-label">YouTube</span>
+        </a>
+      </nav>
+    </main>
+
+    <footer class="px-4 pb-6 text-center text-xs text-slate-600">
+      <span>Zovex Core &copy; 2026 · פרטיות תחילה</span>
+    </footer>
+  </div>
+
+<script src="js/app.js" defer></script>
+</body>
+</html>

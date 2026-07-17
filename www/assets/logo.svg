@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="zovexGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="0.5" stop-color="#818cf8"/>
+      <stop offset="1" stop-color="#c084fc"/>
+    </linearGradient>
+  </defs>
+  <circle cx="32" cy="32" r="30" stroke="url(#zovexGrad)" stroke-width="3" fill="rgba(255,255,255,0.02)"/>
+  <path d="M20 22h24l-16 20h16" stroke="url(#zovexGrad)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <circle cx="32" cy="32" r="3.5" fill="url(#zovexGrad)"/>
+</svg>

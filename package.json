@@ -1,0 +1,26 @@
+{
+  "name": "zovex-core",
+  "version": "1.0.0",
+  "description": "Zovex Core — a fast, private, secure browser home screen (HTML/Tailwind/Vanilla JS) wrapped for Android with Capacitor.",
+  "private": true,
+  "scripts": {
+    "sync": "cap sync android",
+    "android:open": "cap open android",
+    "android:assembleDebug": "cd android && ./gradlew assembleDebug"
+  },
+  "keywords": [
+    "browser",
+    "capacitor",
+    "android",
+    "privacy"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/core": "^8.4.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.4.2"
+  }
+}
