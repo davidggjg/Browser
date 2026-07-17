@@ -89,6 +89,7 @@
         try {
           sessionStorage.removeItem(SEARCH_STORAGE_KEY);
         } catch (_) { /* ignore */ }
+        searchInput.value = '';
         openUrl(safeUrl);
         return;
       }
@@ -97,6 +98,7 @@
     try {
       sessionStorage.removeItem(SEARCH_STORAGE_KEY);
     } catch (_) { /* ignore */ }
+    searchInput.value = '';
     openUrl(SEARCH_ENGINE + encodeURIComponent(query));
   }
 

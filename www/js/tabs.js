@@ -267,7 +267,11 @@
       if (reason === 'newtab') {
         showView('home');
         var input = document.getElementById('searchInput');
-        if (input) setTimeout(function () { input.focus(); }, 50);
+        if (input) {
+          input.value = '';
+          try { sessionStorage.removeItem('zovex:searchDraft'); } catch (_) { /* ignore */ }
+          setTimeout(function () { input.focus(); }, 50);
+        }
       } else if (reason === 'switcher') {
         showView('switcher');
         refreshTabsFromNative();

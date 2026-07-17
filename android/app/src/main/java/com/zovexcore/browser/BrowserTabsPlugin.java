@@ -20,6 +20,8 @@ import android.widget.PopupMenu;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -448,6 +450,18 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
         bar.addView(newTab);
         bar.addView(tabsButton);
         bar.addView(menu);
+
+        // Capacitor 8 renders edge-to-edge by default, so this bar (added via
+        // addContentView) would otherwise sit partly behind the system
+        // gesture/navigation bar. Pad it by the real inset instead.
+        final int basePadding = dp(activity, 8);
+        bar.setPadding(0, basePadding, 0, basePadding);
+        ViewCompat.setOnApplyWindowInsetsListener(bar, (v, insets) -> {
+            int bottomInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom;
+            v.setPadding(v.getPaddingLeft(), basePadding, v.getPaddingRight(), basePadding + bottomInset);
+            return insets;
+        });
+
         return bar;
     }
 
