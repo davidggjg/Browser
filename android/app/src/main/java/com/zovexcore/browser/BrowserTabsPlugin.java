@@ -21,6 +21,7 @@ import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -239,6 +240,28 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
     }
 
     @PluginMethod
+    public void getPageLinks(final PluginCall call) {
+        final Integer id = call.getInt("id");
+        if (id == null) {
+            call.reject("Missing id");
+            return;
+        }
+        getActivity().runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                manager.requestLinks(id, new TabWebViewManager.LinksCallback() {
+                    @Override
+                    public void onLinks(JSArray links) {
+                        JSObject ret = new JSObject();
+                        ret.put("links", links);
+                        call.resolve(ret);
+                    }
+                });
+            }
+        });
+    }
+
+    @PluginMethod
     public void downloadUrl(final PluginCall call) {
         final String url = call.getString("url");
         if (url == null || url.isEmpty()) {
@@ -436,7 +459,8 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
         PopupMenu popup = new PopupMenu(activity, anchor);
         popup.getMenu().add(0, 1, 0, "הצג מקור דף");
         popup.getMenu().add(0, 2, 1, "מדיה שזוהתה");
-        popup.getMenu().add(0, 3, 2, "שתף קישור");
+        popup.getMenu().add(0, 3, 2, "קישורים בדף");
+        popup.getMenu().add(0, 4, 3, "שתף קישור");
         popup.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
             @Override
             public boolean onMenuItemClick(android.view.MenuItem item) {
@@ -450,6 +474,10 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
                         emitChromeRequested("media:" + activeId);
                         return true;
                     case 3:
+                        manager.showChrome();
+                        emitChromeRequested("links:" + activeId);
+                        return true;
+                    case 4:
                         manager.shareActiveUrl();
                         return true;
                     default:

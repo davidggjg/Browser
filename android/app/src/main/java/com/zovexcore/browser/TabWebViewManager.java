@@ -22,7 +22,6 @@ import com.getcapacitor.JSObject;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -48,6 +47,16 @@ public class TabWebViewManager {
             Pattern.CASE_INSENSITIVE
     );
 
+    /**
+     * Some players (YouTube being the best-known example) stream media from
+     * URLs with no recognizable file extension, e.g. "/videoplayback?...".
+     * This catches those by path/host keyword instead of extension.
+     */
+    private static final Pattern KNOWN_STREAM_PATH_PATTERN = Pattern.compile(
+            "videoplayback|googlevideo\\.com|\\.vimeocdn\\.com|/hls/|/dash/|manifest\\.(mpd|m3u8)",
+            Pattern.CASE_INSENSITIVE
+    );
+
     private static final String MEDIA_SCANNER_JS =
             "(function(){" +
             "  if (window.__zovexScannerInstalled) { return; }" +
@@ -62,6 +71,13 @@ public class TabWebViewManager {
             "    try {" +
             "      var src = el.currentSrc || el.src;" +
             "      if (src) { report(src, el.tagName.toLowerCase() === 'audio' ? 'audio' : 'video'); }" +
+            "      if (el.poster) { report(el.poster, 'poster'); }" +
+            "    } catch (e) {}" +
+            "  }" +
+            "  function scanPoster() {" +
+            "    try {" +
+            "      var og = document.querySelector('meta[property=\"og:image\"], meta[name=\"twitter:image\"]');" +
+            "      if (og && og.content) { report(og.content, 'poster'); }" +
             "    } catch (e) {}" +
             "  }" +
             "  function scanPlayers() {" +
@@ -82,6 +98,7 @@ public class TabWebViewManager {
             "    var els = document.querySelectorAll('video, audio');" +
             "    for (var i = 0; i < els.length; i++) { scanEl(els[i]); }" +
             "    scanPlayers();" +
+            "    scanPoster();" +
             "  }" +
             "  document.addEventListener('loadedmetadata', function (e) { scanEl(e.target); }, true);" +
             "  document.addEventListener('durationchange', function (e) { scanEl(e.target); }, true);" +
@@ -100,6 +117,26 @@ public class TabWebViewManager {
             "    .then(function (r) { return r.text(); })" +
             "    .then(function (t) { if (window.ZovexNative) { window.ZovexNative.reportSource(t); } })" +
             "    .catch(function (e) { if (window.ZovexNative) { window.ZovexNative.reportSource('<!-- שגיאה בשליפת המקור: ' + e + ' -->'); } });" +
+            "})();";
+
+    private static final String PAGE_LINKS_FETCH_JS =
+            "(function(){" +
+            "  try {" +
+            "    var seen = {};" +
+            "    var out = [];" +
+            "    var anchors = document.querySelectorAll('a[href]');" +
+            "    for (var i = 0; i < anchors.length; i++) {" +
+            "      try {" +
+            "        var href = anchors[i].href;" +
+            "        if (!href || seen[href] || href.indexOf('http') !== 0) { continue; }" +
+            "        seen[href] = true;" +
+            "        out.push({ url: href, text: (anchors[i].textContent || '').trim().slice(0, 120) });" +
+            "      } catch (e) {}" +
+            "    }" +
+            "    if (window.ZovexNative) { window.ZovexNative.reportLinks(JSON.stringify(out)); }" +
+            "  } catch (e) {" +
+            "    if (window.ZovexNative) { window.ZovexNative.reportLinks('[]'); }" +
+            "  }" +
             "})();";
 
     private static class Tab {
@@ -123,6 +160,8 @@ public class TabWebViewManager {
     private final Map<Integer, Tab> tabs = new LinkedHashMap<>();
     private final Map<Integer, Runnable> pendingSourceCallbacks = new ConcurrentHashMap<>();
     private final Map<Integer, String> pendingSourceResults = new ConcurrentHashMap<>();
+    private final Map<Integer, Runnable> pendingLinksCallbacks = new ConcurrentHashMap<>();
+    private final Map<Integer, String> pendingLinksResults = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Integer, LinkedHashMap<String, JSObject>> mediaByTab = new ConcurrentHashMap<>();
 
     private int nextId = 1;
@@ -193,6 +232,8 @@ public class TabWebViewManager {
         mediaByTab.remove(id);
         pendingSourceCallbacks.remove(id);
         pendingSourceResults.remove(id);
+        pendingLinksCallbacks.remove(id);
+        pendingLinksResults.remove(id);
         if (activeTabId != null && activeTabId == id) {
             if (!tabs.isEmpty()) {
                 showTab(tabs.keySet().iterator().next());
@@ -311,6 +352,43 @@ public class TabWebViewManager {
         void onSource(String html);
     }
 
+    /** Scans every &lt;a href&gt; currently in the page's DOM, on demand (not tracked continuously). */
+    public void requestLinks(int tabId, final LinksCallback callback) {
+        Tab tab = tabs.get(tabId);
+        if (tab == null) {
+            callback.onLinks(new JSArray());
+            return;
+        }
+        pendingLinksCallbacks.put(tabId, new Runnable() {
+            @Override
+            public void run() {
+                String json = pendingLinksResults.remove(tabId);
+                JSArray arr;
+                try {
+                    arr = json == null ? new JSArray() : new JSArray(json);
+                } catch (Exception e) {
+                    arr = new JSArray();
+                }
+                callback.onLinks(arr);
+            }
+        });
+        tab.webView.evaluateJavascript(PAGE_LINKS_FETCH_JS, null);
+        new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                Runnable pending = pendingLinksCallbacks.remove(tabId);
+                if (pending != null) {
+                    pendingLinksResults.putIfAbsent(tabId, "[]");
+                    pending.run();
+                }
+            }
+        }, 8000);
+    }
+
+    public interface LinksCallback {
+        void onLinks(JSArray links);
+    }
+
     private Tab activeTab() {
         return activeTabId == null ? null : tabs.get(activeTabId);
     }
@@ -426,6 +504,15 @@ public class TabWebViewManager {
                 activity.runOnUiThread(pending);
             }
         }
+
+        @JavascriptInterface
+        public void reportLinks(final String json) {
+            pendingLinksResults.put(tabId, json);
+            final Runnable pending = pendingLinksCallbacks.remove(tabId);
+            if (pending != null) {
+                activity.runOnUiThread(pending);
+            }
+        }
     }
 
     private class TabWebViewClient extends WebViewClient {
@@ -459,9 +546,10 @@ public class TabWebViewManager {
         public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
             try {
                 String url = request.getUrl().toString();
-                Matcher m = MEDIA_URL_PATTERN.matcher(url);
-                if (m.find()) {
+                if (MEDIA_URL_PATTERN.matcher(url).find()) {
                     reportMedia(tabId, url, kindForUrl(url), "network");
+                } else if (KNOWN_STREAM_PATH_PATTERN.matcher(url).find()) {
+                    reportMedia(tabId, url, "video", "network");
                 }
             } catch (Exception ignored) {
             }

@@ -15,9 +15,10 @@
     return window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.BrowserTabs;
   }
 
-  var views = ['home', 'switcher', 'source', 'media'];
+  var views = ['home', 'switcher', 'source', 'media', 'links'];
   var tabsCache = [];
   var mediaCache = {};
+  var linksCache = {};
   var currentPanelTabId = null;
 
   function showView(name) {
@@ -177,7 +178,8 @@
         navigator.clipboard.writeText(item.url).then(function () { toast('הקישור הועתק'); });
       });
       row.querySelector('[data-download]').addEventListener('click', function () {
-        plugin().downloadUrl({ url: item.url, filename: filenameFromUrl(item.url, 'mp4') }).then(function () {
+        var fallbackExt = item.kind === 'poster' ? 'jpg' : (item.kind === 'audio' ? 'mp3' : 'mp4');
+        plugin().downloadUrl({ url: item.url, filename: filenameFromUrl(item.url, fallbackExt) }).then(function () {
           toast('ההורדה החלה');
         }).catch(function (e) {
           toast(String((e && e.message) || 'ההורדה נכשלה'));
@@ -206,6 +208,55 @@
     }
   }
 
+  // ---------- Page links (on-demand full scan of <a href> on the page) ----------
+  function renderLinks(tabId) {
+    var list = document.getElementById('linksList');
+    var empty = document.getElementById('linksEmptyState');
+    var items = linksCache[tabId] || [];
+    list.innerHTML = '';
+    if (!items.length) {
+      empty.textContent = 'לא נמצאו קישורים בדף הזה.';
+      empty.classList.remove('hidden');
+      return;
+    }
+    empty.classList.add('hidden');
+    items.forEach(function (item) {
+      var row = document.createElement('div');
+      row.className = 'media-item';
+      row.innerHTML =
+        '<span class="media-url" dir="ltr" title="' + escapeHtml(item.url) + '">' +
+        (item.text ? escapeHtml(item.text) + ' — ' : '') + escapeHtml(item.url) + '</span>' +
+        '<span class="media-actions"><button data-copy>העתק</button></span>';
+      row.querySelector('[data-copy]').addEventListener('click', function () {
+        navigator.clipboard.writeText(item.url).then(function () { toast('הקישור הועתק'); });
+      });
+      list.appendChild(row);
+    });
+  }
+
+  function openLinksPanel(tabId) {
+    currentPanelTabId = tabId;
+    var empty = document.getElementById('linksEmptyState');
+    document.getElementById('linksList').innerHTML = '';
+    empty.textContent = 'טוען קישורים…';
+    empty.classList.remove('hidden');
+    showView('links');
+    plugin().getPageLinks({ id: tabId }).then(function (res) {
+      linksCache[tabId] = res.links || [];
+      renderLinks(tabId);
+    });
+  }
+
+  function wireLinksPanel() {
+    var closeBtn = document.getElementById('linksCloseBtn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function () {
+        plugin().showChrome();
+        showView('switcher');
+      });
+    }
+  }
+
   // ---------- Native events ----------
   function registerNativeListeners() {
     var p = plugin();
@@ -224,6 +275,8 @@
         openSourcePanel(parseInt(reason.split(':')[1], 10));
       } else if (reason.indexOf('media:') === 0) {
         openMediaPanel(parseInt(reason.split(':')[1], 10));
+      } else if (reason.indexOf('links:') === 0) {
+        openLinksPanel(parseInt(reason.split(':')[1], 10));
       }
     });
 
@@ -240,6 +293,7 @@
     p.addListener('tabClosed', function (data) {
       tabsCache = tabsCache.filter(function (t) { return t.id !== data.id; });
       delete mediaCache[data.id];
+      delete linksCache[data.id];
       renderTabs();
     });
 
@@ -268,6 +322,7 @@
   document.addEventListener('DOMContentLoaded', function () {
     wireSourcePanel();
     wireMediaPanel();
+    wireLinksPanel();
     var newTabBtn = document.getElementById('switcherNewTabBtn');
     if (newTabBtn) {
       newTabBtn.addEventListener('click', function () {
