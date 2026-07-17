@@ -17,6 +17,7 @@ import android.webkit.WebView;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -78,11 +79,39 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
 
         manager = new TabWebViewManager(activity, contentContainer, fullscreenContainer, bridgeWebView, this);
 
-        LinearLayout toolbar = buildToolbar(activity);
-        FrameLayout.LayoutParams toolbarParams = new FrameLayout.LayoutParams(
+        LinearLayout topBar = new LinearLayout(activity);
+        topBar.setOrientation(LinearLayout.VERTICAL);
+        topBar.addView(buildToolbar(activity));
+        topBar.addView(buildProgressBar(activity));
+
+        FrameLayout.LayoutParams topBarParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        toolbarParams.gravity = Gravity.BOTTOM;
-        activity.addContentView(toolbar, toolbarParams);
+        topBarParams.gravity = Gravity.TOP;
+        activity.addContentView(topBar, topBarParams);
+
+        // Capacitor 8 renders edge-to-edge by default, so this bar (added via
+        // addContentView) would otherwise sit partly behind the status bar /
+        // camera cutout. Pad it by the real inset instead.
+        ViewCompat.setOnApplyWindowInsetsListener(topBar, (v, insets) -> {
+            int topInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top;
+            v.setPadding(v.getPaddingLeft(), topInset, v.getPaddingRight(), v.getPaddingBottom());
+            return insets;
+        });
+    }
+
+    private ProgressBar activeProgressBar;
+
+    private ProgressBar buildProgressBar(AppCompatActivity activity) {
+        ProgressBar bar = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
+        bar.setMax(100);
+        bar.setProgress(0);
+        bar.setVisibility(View.GONE);
+        bar.setProgressTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#22D3EE")));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(activity, 3));
+        bar.setLayoutParams(lp);
+        activeProgressBar = bar;
+        return bar;
     }
 
     // ---------- JS-facing methods ----------
@@ -343,6 +372,9 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
 
     @Override
     public void onTorError(String message) {
+        // Whatever state the proxy override was in, a Tor failure must never
+        // leave normal browsing broken behind a dead SOCKS port.
+        clearProxyOverride();
         JSObject o = new JSObject();
         o.put("status", "ERROR");
         o.put("message", message);
@@ -434,6 +466,10 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
 
     @Override
     public void onActiveTabChanged(Integer tabId) {
+        if (activeProgressBar != null) {
+            activeProgressBar.setVisibility(View.GONE);
+            activeProgressBar.setProgress(0);
+        }
         JSObject o = new JSObject();
         o.put("id", tabId);
         notifyListeners("activeTabChanged", o);
@@ -447,6 +483,22 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
     @Override
     public void onTabProgress(JSObject progressInfo) {
         notifyListeners("tabProgress", progressInfo);
+        if (activeProgressBar == null) {
+            return;
+        }
+        Integer tabId = progressInfo.getInteger("tabId", -1);
+        Integer progress = progressInfo.getInteger("progress", -1);
+        Integer activeId = manager != null ? manager.getActiveTabId() : null;
+        if (activeId == null || !activeId.equals(tabId)) {
+            return;
+        }
+        if (progress >= 100) {
+            activeProgressBar.setVisibility(View.GONE);
+            activeProgressBar.setProgress(0);
+        } else {
+            activeProgressBar.setVisibility(View.VISIBLE);
+            activeProgressBar.setProgress(progress);
+        }
     }
 
     // ---------- native bottom toolbar ----------
@@ -540,16 +592,8 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
         bar.addView(tabsButton);
         bar.addView(menu);
 
-        // Capacitor 8 renders edge-to-edge by default, so this bar (added via
-        // addContentView) would otherwise sit partly behind the system
-        // gesture/navigation bar. Pad it by the real inset instead.
-        final int basePadding = dp(activity, 8);
+        int basePadding = dp(activity, 8);
         bar.setPadding(0, basePadding, 0, basePadding);
-        ViewCompat.setOnApplyWindowInsetsListener(bar, (v, insets) -> {
-            int bottomInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom;
-            v.setPadding(v.getPaddingLeft(), basePadding, v.getPaddingRight(), basePadding + bottomInset);
-            return insets;
-        });
 
         return bar;
     }

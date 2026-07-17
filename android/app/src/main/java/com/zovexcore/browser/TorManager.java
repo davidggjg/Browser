@@ -55,7 +55,7 @@ public class TorManager {
                 bound = true;
             } catch (Exception e) {
                 if (listener != null) {
-                    listener.onTorError("Tor service connection failed: " + e.getMessage());
+                    listener.onTorError("Tor service connection failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
                 }
             }
         }
@@ -81,7 +81,7 @@ public class TorManager {
             appContext.bindService(new Intent(appContext, TorService.class), connection, Context.BIND_AUTO_CREATE);
         } catch (Exception e) {
             if (listener != null) {
-                listener.onTorError("Could not start Tor: " + e.getMessage());
+                listener.onTorError("Could not start Tor: " + e.getClass().getSimpleName() + ": " + e.getMessage());
             }
         }
     }
