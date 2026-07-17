@@ -490,7 +490,7 @@ public class TabWebViewManager {
                 String url = o.getString("url", null);
                 String kind = o.getString("kind", "video");
                 if (url != null && (url.startsWith("http://") || url.startsWith("https://"))) {
-                    reportMedia(tabId, enforceHttps(url), kind, "element");
+                    TabWebViewManager.this.reportMedia(tabId, enforceHttps(url), kind, "element");
                 }
             } catch (Exception ignored) {
             }
