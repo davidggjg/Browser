@@ -311,6 +311,8 @@
         renderMedia(info.tabId);
       }
     });
+
+    p.addListener('torStatus', handleTorStatus);
   }
 
   function openUrl(url) {
@@ -321,6 +323,30 @@
     plugin().open({ url: url }).then(function () {
       refreshTabsFromNative();
     });
+  }
+
+  var TOR_STATUS_TEXT = {
+    STARTING: 'מתחבר לרשת Tor…',
+    ON: 'מתחבר לרשת Tor… כמעט מוכן',
+    READY: 'מצב רשת אפלה פעיל — הגלישה מנותבת דרך Tor',
+    OFF: 'מצב רשת אפלה פעיל — הניתוב מוצפן ומוסתר',
+    ERROR: 'שגיאה בהפעלת Tor — הגלישה אינה מנותבת דרכו',
+    UNSUPPORTED: 'המכשיר לא תומך בניתוב Tor אמיתי — מוצג עיצוב בלבד'
+  };
+
+  function setOnionModeNative(enabled) {
+    if (!isNative()) return;
+    plugin().setOnionMode({ enabled: enabled });
+  }
+
+  function handleTorStatus(data) {
+    var text = document.getElementById('onionBannerText');
+    if (text && TOR_STATUS_TEXT[data.status]) {
+      text.textContent = TOR_STATUS_TEXT[data.status];
+    }
+    if (data.status === 'ERROR' || data.status === 'UNSUPPORTED') {
+      toast(TOR_STATUS_TEXT[data.status]);
+    }
   }
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -341,6 +367,7 @@
 
   window.ZovexTabs = {
     isNative: isNative,
-    openUrl: openUrl
+    openUrl: openUrl,
+    setOnionMode: setOnionModeNative
   };
 })();

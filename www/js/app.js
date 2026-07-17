@@ -25,6 +25,15 @@
     onionToggle.checked = enabled;
     onionBanner.classList.toggle('show', enabled);
     onionBanner.classList.toggle('hidden', !enabled);
+    const bannerText = document.getElementById('onionBannerText');
+    if (bannerText) {
+      bannerText.textContent = enabled
+        ? 'מתחבר לרשת Tor…'
+        : 'מצב רשת אפלה פעיל — הניתוב מוצפן ומוסתר';
+    }
+    if (window.ZovexTabs && window.ZovexTabs.setOnionMode) {
+      window.ZovexTabs.setOnionMode(enabled);
+    }
     try {
       sessionStorage.setItem(ONION_STORAGE_KEY, enabled ? '1' : '0');
     } catch (_) { /* storage unavailable — ignore, mode still works for this load */ }

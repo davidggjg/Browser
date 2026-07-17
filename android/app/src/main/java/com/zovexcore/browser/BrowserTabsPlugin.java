@@ -20,8 +20,12 @@ import android.widget.PopupMenu;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.webkit.ProxyConfig;
+import androidx.webkit.ProxyController;
+import androidx.webkit.WebViewFeature;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -32,6 +36,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.Executor;
 
 /**
  * Bridges the web chrome UI to a native multi-tab WebView browsing engine.
@@ -41,11 +46,12 @@ import java.nio.charset.StandardCharsets;
  * would race against that.
  */
 @CapacitorPlugin(name = "BrowserTabs")
-public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Listener {
+public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Listener, TorManager.Listener {
 
     private static BrowserTabsPlugin instance;
 
     private TabWebViewManager manager;
+    private TorManager torManager;
     private TextView tabsButton;
     private int tabCount = 0;
 
@@ -261,6 +267,86 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
                 });
             }
         });
+    }
+
+    @PluginMethod
+    public void setOnionMode(final PluginCall call) {
+        Boolean enabled = call.getBoolean("enabled", false);
+        JSObject ret = new JSObject();
+        if (Boolean.TRUE.equals(enabled)) {
+            if (torManager == null) {
+                torManager = new TorManager(getContext(), this);
+            }
+            emitTorStatus("STARTING");
+            torManager.start();
+            ret.put("starting", true);
+        } else {
+            clearProxyOverride();
+            if (torManager != null) {
+                torManager.stop();
+            }
+            emitTorStatus("OFF");
+            ret.put("stopped", true);
+        }
+        call.resolve(ret);
+    }
+
+    private void emitTorStatus(String status) {
+        JSObject o = new JSObject();
+        o.put("status", status);
+        notifyListeners("torStatus", o);
+    }
+
+    private void applyProxyOverride(int socksPort) {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
+            emitTorStatus("UNSUPPORTED");
+            return;
+        }
+        ProxyConfig config = new ProxyConfig.Builder()
+                .addProxyRule("socks5://127.0.0.1:" + socksPort)
+                .build();
+        Executor mainExecutor = ContextCompat.getMainExecutor(getContext());
+        ProxyController.getInstance().setProxyOverride(config, mainExecutor, new Runnable() {
+            @Override
+            public void run() {
+                emitTorStatus("READY");
+            }
+        });
+    }
+
+    private void clearProxyOverride() {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
+            return;
+        }
+        try {
+            Executor mainExecutor = ContextCompat.getMainExecutor(getContext());
+            ProxyController.getInstance().clearProxyOverride(mainExecutor, new Runnable() {
+                @Override
+                public void run() {
+                }
+            });
+        } catch (Exception ignored) {
+        }
+    }
+
+    // ---------- TorManager.Listener ----------
+
+    @Override
+    public void onTorStatusChanged(String status) {
+        emitTorStatus(status);
+    }
+
+    @Override
+    public void onTorReady(int socksPort) {
+        applyProxyOverride(socksPort);
+    }
+
+    @Override
+    public void onTorError(String message) {
+        JSObject o = new JSObject();
+        o.put("status", "ERROR");
+        o.put("message", message);
+        notifyListeners("torStatus", o);
     }
 
     @PluginMethod

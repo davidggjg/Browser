@@ -21,6 +21,9 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // Guardian Project's own Maven repo — carries newer tor-android
+        // releases than are mirrored to Maven Central.
+        maven { url "https://raw.githubusercontent.com/guardianproject/gpmaven/master" }
     }
 }
 

@@ -40,6 +40,15 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+
+    // Real embedded Tor client for the Onion Mode toggle — no external
+    // Orbot app required. TorService starts/manages the Tor process and
+    // exposes a local SOCKS port once bootstrapped.
+    implementation "info.guardianproject:tor-android:0.4.8.16"
+    implementation "info.guardianproject:jtorctl:0.4.5.7"
+    // WebView per-process SOCKS proxy override (ProxyController).
+    implementation "androidx.webkit:webkit:1.16.0"
+
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
