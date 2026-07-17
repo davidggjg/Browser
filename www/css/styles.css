@@ -196,6 +196,174 @@ html, body {
 /* html[dir="rtl"] flips translateX direction naturally via `right` positioning above,
    so the knob still slides toward the "on" side correctly in RTL layout. */
 
+/* ---------- Chrome views: tab switcher / source / media ---------- */
+.zovex-view.hidden {
+  display: none;
+}
+
+.panel-action-btn {
+  border-radius: 9999px;
+  padding: 0.45rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #04101a;
+  background: linear-gradient(90deg, var(--accent-1), var(--accent-2));
+  transition: transform 0.15s ease, opacity 0.6s ease, background-color 0.6s ease;
+}
+.panel-action-btn:hover { transform: translateY(-1px) scale(1.03); }
+.panel-action-btn:active { transform: translateY(0) scale(0.97); }
+.panel-action-btn-ghost {
+  color: #e2e8f0;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+}
+
+.code-viewer {
+  flex: 1;
+  overflow: auto;
+  max-height: 65vh;
+  margin: 0;
+  padding: 1rem 1.1rem;
+  border-radius: 1rem;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid var(--glass-border);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: #cbd5e1;
+  white-space: pre-wrap;
+  word-break: break-all;
+  direction: ltr;
+  text-align: left;
+}
+
+.tab-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1rem 1.1rem;
+  border-radius: 1.1rem;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid var(--glass-border);
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.6s ease, background-color 0.6s ease;
+}
+.tab-card:hover {
+  transform: translateY(-2px) scale(1.015);
+  border-color: var(--glass-border-strong);
+}
+.tab-card .tab-card-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #e2e8f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tab-card .tab-card-url {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: ltr;
+  text-align: right;
+}
+.tab-card .tab-card-close {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  height: 1.6rem;
+  width: 1.6rem;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+.tab-card .tab-card-close:hover {
+  background: rgba(248, 113, 113, 0.25);
+  color: #fecaca;
+}
+
+.media-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-radius: 1rem;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid var(--glass-border);
+}
+.media-item .media-kind {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.25rem 0.55rem;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--accent-1) 20%, transparent);
+  color: var(--accent-1);
+}
+.media-item .media-url {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  color: #cbd5e1;
+  direction: ltr;
+  text-align: left;
+}
+.media-item .media-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+.media-item .media-actions button {
+  font-size: 0.72rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+}
+.media-item .media-actions button:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.zovex-toast {
+  position: fixed;
+  bottom: 5.5rem;
+  left: 50%;
+  transform: translate3d(-50%, 0, 0);
+  z-index: 50;
+  padding: 0.6rem 1.1rem;
+  border-radius: 9999px;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid var(--glass-border-strong);
+  color: #e2e8f0;
+  font-size: 0.8rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.zovex-toast.show {
+  opacity: 1;
+  transform: translate3d(-50%, -0.4rem, 0);
+}
+
 #onionBanner.show {
   display: inline-flex;
   animation: banner-in 0.4s ease forwards;

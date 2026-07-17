@@ -71,6 +71,14 @@
     return url.toString();
   }
 
+  function openUrl(url) {
+    if (window.ZovexTabs) {
+      window.ZovexTabs.openUrl(url);
+    } else {
+      window.location.href = url;
+    }
+  }
+
   function navigate(raw) {
     const query = raw.trim();
     if (!query) return;
@@ -81,7 +89,7 @@
         try {
           sessionStorage.removeItem(SEARCH_STORAGE_KEY);
         } catch (_) { /* ignore */ }
-        window.location.href = safeUrl;
+        openUrl(safeUrl);
         return;
       }
     }
@@ -89,7 +97,7 @@
     try {
       sessionStorage.removeItem(SEARCH_STORAGE_KEY);
     } catch (_) { /* ignore */ }
-    window.location.href = SEARCH_ENGINE + encodeURIComponent(query);
+    openUrl(SEARCH_ENGINE + encodeURIComponent(query));
   }
 
   searchForm.addEventListener('submit', (event) => {
@@ -103,7 +111,7 @@
       event.preventDefault();
       const target = card.getAttribute('data-url') || card.getAttribute('href');
       const safeUrl = toStrictHttpsUrl(target);
-      if (safeUrl) window.location.href = safeUrl;
+      if (safeUrl) openUrl(safeUrl);
     });
   });
 })();
