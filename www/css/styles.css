@@ -202,6 +202,46 @@ html.native-app .app-shell {
   padding-top: calc(env(safe-area-inset-top, 0px) + 4.5rem);
 }
 
+/* ---------- Dev-menu panels docked as a half-screen sheet ----------
+   When a dev panel (source/media/links/network) is open, the native side
+   shrinks the chrome WebView itself to the bottom ~60% of the screen and
+   leaves the live page visible + interactive above it, instead of
+   replacing the whole screen. Here we just make that shrunken webview look
+   like a proper bottom sheet and drop the now-irrelevant home chrome. */
+html.dev-panel-overlay .bg-fx,
+html.dev-panel-overlay header,
+html.dev-panel-overlay #onionBanner,
+html.dev-panel-overlay #homeFooter {
+  display: none !important;
+}
+html.dev-panel-overlay.native-app .app-shell {
+  padding-top: 0;
+}
+html.dev-panel-overlay .app-shell {
+  height: 100%;
+  min-height: 100%;
+  border-top-left-radius: 1.25rem;
+  border-top-right-radius: 1.25rem;
+  overflow: hidden;
+  background: #05070d;
+  box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.5);
+}
+html.dev-panel-overlay .app-shell::before {
+  content: '';
+  display: block;
+  width: 2.75rem;
+  height: 0.28rem;
+  margin: 0.6rem auto 0;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.22);
+  flex-shrink: 0;
+}
+html.dev-panel-overlay main {
+  padding-top: 0.75rem;
+  padding-bottom: 1rem;
+  justify-content: flex-start;
+}
+
 /* ---------- Chrome views: tab switcher / source / media ---------- */
 .zovex-view.hidden {
   display: none;
@@ -407,23 +447,30 @@ html.native-app .app-shell {
 
 .zovex-toast {
   position: fixed;
-  bottom: 5.5rem;
+  top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
   left: 50%;
-  transform: translate3d(-50%, 0, 0);
-  z-index: 50;
+  max-width: calc(100vw - 2rem);
+  transform: translate3d(-50%, -0.4rem, 0);
+  z-index: 60;
   padding: 0.6rem 1.1rem;
   border-radius: 9999px;
-  background: rgba(15, 23, 42, 0.92);
+  background: rgba(15, 23, 42, 0.95);
   border: 1px solid var(--glass-border-strong);
   color: #e2e8f0;
   font-size: 0.8rem;
+  text-align: center;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.25s ease, transform 0.25s ease;
 }
+/* Native app: the fixed toolbar already occupies the very top, so push the
+   toast below it instead of overlapping the home search box mid-screen. */
+html.native-app .zovex-toast {
+  top: calc(env(safe-area-inset-top, 0px) + 4.5rem);
+}
 .zovex-toast.show {
   opacity: 1;
-  transform: translate3d(-50%, -0.4rem, 0);
+  transform: translate3d(-50%, 0, 0);
 }
 
 #onionBanner.show {

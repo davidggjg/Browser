@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.JavascriptInterface;
@@ -271,6 +272,8 @@ public class TabWebViewManager {
 
     private int nextId = 1;
     private Integer activeTabId = null;
+    private boolean chromeOverlayOpen = false;
+    private View topBar;
 
     private View customFullscreenView;
     private WebChromeClient.CustomViewCallback customViewCallback;
@@ -309,6 +312,8 @@ public class TabWebViewManager {
         for (Tab t : tabs.values()) {
             t.webView.setVisibility(t.id == id ? View.VISIBLE : View.GONE);
         }
+        chromeOverlayOpen = false;
+        resetBridgeWebViewFull();
         contentContainer.setVisibility(View.VISIBLE);
         bridgeWebView.setVisibility(View.GONE);
         activeTabId = id;
@@ -319,11 +324,84 @@ public class TabWebViewManager {
     }
 
     public void showChrome() {
+        chromeOverlayOpen = false;
+        resetBridgeWebViewFull();
         contentContainer.setVisibility(View.GONE);
         bridgeWebView.setVisibility(View.VISIBLE);
         activeTabId = null;
         if (listener != null) {
             listener.onActiveTabChanged(null);
+        }
+    }
+
+    /** Attaches the native toolbar so it can be re-raised above the docked panel. */
+    public void setTopBar(View topBar) {
+        this.topBar = topBar;
+    }
+
+    public boolean isChromeOverlayOpen() {
+        return chromeOverlayOpen;
+    }
+
+    /**
+     * Docks the bridge (chrome) WebView to the bottom ~60% of the screen,
+     * on top of the still-visible, still-interactive live page, instead of
+     * replacing it outright — used for the dev-menu panels (source/media/
+     * links/network) so browsing stays usable underneath.
+     */
+    public void showChromeOverlay() {
+        chromeOverlayOpen = true;
+        View container = bridgeChromeContainer();
+        View root = activity.findViewById(android.R.id.content);
+        int screenH = (root != null && root.getHeight() > 0)
+                ? root.getHeight()
+                : activity.getResources().getDisplayMetrics().heightPixels;
+        ViewGroup.LayoutParams existing = container.getLayoutParams();
+        if (existing instanceof FrameLayout.LayoutParams) {
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) existing;
+            lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
+            lp.height = (int) (screenH * 0.62);
+            lp.gravity = Gravity.BOTTOM;
+            container.setLayoutParams(lp);
+        }
+        bridgeWebView.setVisibility(View.VISIBLE);
+        // bridgeWebView itself is nested inside Capacitor's own CoordinatorLayout,
+        // which is what's actually stacked (as a sibling) against contentContainer —
+        // reordering the WebView alone would not change the visible stacking order.
+        container.bringToFront();
+        if (topBar != null) {
+            topBar.bringToFront();
+        }
+        container.requestLayout();
+    }
+
+    /** Closes the docked panel and returns to full, unobstructed browsing. */
+    public void hideChromeOverlay() {
+        chromeOverlayOpen = false;
+        resetBridgeWebViewFull();
+        bridgeWebView.setVisibility(View.GONE);
+        if (activeTabId != null) {
+            contentContainer.setVisibility(View.VISIBLE);
+        }
+    }
+
+    /** The WebView's real parent (Capacitor wraps it in a CoordinatorLayout) — this is
+     * the view that's actually a direct sibling of contentContainer in the window's
+     * content root, so sizing/z-order changes must target it, not the WebView itself. */
+    private View bridgeChromeContainer() {
+        android.view.ViewParent parent = bridgeWebView.getParent();
+        return (parent instanceof View) ? (View) parent : bridgeWebView;
+    }
+
+    private void resetBridgeWebViewFull() {
+        View container = bridgeChromeContainer();
+        ViewGroup.LayoutParams existing = container.getLayoutParams();
+        if (existing instanceof FrameLayout.LayoutParams) {
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) existing;
+            lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
+            lp.height = ViewGroup.LayoutParams.MATCH_PARENT;
+            lp.gravity = Gravity.NO_GRAVITY;
+            container.setLayoutParams(lp);
         }
     }
 
@@ -401,6 +479,10 @@ public class TabWebViewManager {
     }
 
     public boolean handleBackPressed() {
+        if (chromeOverlayOpen) {
+            hideChromeOverlay();
+            return true;
+        }
         if (activeTabId == null) {
             return false;
         }

@@ -8,6 +8,8 @@ import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.os.IBinder;
 
+import androidx.core.content.ContextCompat;
+
 import org.torproject.jni.TorService;
 
 /**
@@ -75,7 +77,7 @@ public class TorManager {
     public void start() {
         try {
             if (!receiverRegistered) {
-                appContext.registerReceiver(statusReceiver, new IntentFilter(TorService.ACTION_STATUS));
+                ContextCompat.registerReceiver(appContext, statusReceiver, new IntentFilter(TorService.ACTION_STATUS), ContextCompat.RECEIVER_NOT_EXPORTED);
                 receiverRegistered = true;
             }
             appContext.bindService(new Intent(appContext, TorService.class), connection, Context.BIND_AUTO_CREATE);

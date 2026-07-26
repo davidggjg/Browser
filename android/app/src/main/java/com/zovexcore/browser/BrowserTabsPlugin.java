@@ -88,6 +88,7 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         topBarParams.gravity = Gravity.TOP;
         activity.addContentView(topBar, topBarParams);
+        manager.setTopBar(topBar);
 
         // Capacitor 8 renders edge-to-edge by default, so this bar (added via
         // addContentView) would otherwise sit partly behind the status bar /
@@ -221,6 +222,17 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
             @Override
             public void run() {
                 manager.showChrome();
+                call.resolve();
+            }
+        });
+    }
+
+    @PluginMethod
+    public void hideChromeOverlay(final PluginCall call) {
+        getActivity().runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                manager.hideChromeOverlay();
                 call.resolve();
             }
         });
@@ -636,19 +648,19 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
             public boolean onMenuItemClick(android.view.MenuItem item) {
                 switch (item.getItemId()) {
                     case 1:
-                        manager.showChrome();
+                        manager.showChromeOverlay();
                         emitChromeRequested("source:" + activeId);
                         return true;
                     case 2:
-                        manager.showChrome();
+                        manager.showChromeOverlay();
                         emitChromeRequested("media:" + activeId);
                         return true;
                     case 3:
-                        manager.showChrome();
+                        manager.showChromeOverlay();
                         emitChromeRequested("links:" + activeId);
                         return true;
                     case 4:
-                        manager.showChrome();
+                        manager.showChromeOverlay();
                         emitChromeRequested("network:" + activeId);
                         return true;
                     case 5:

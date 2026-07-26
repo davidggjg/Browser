@@ -16,6 +16,10 @@
   }
 
   var views = ['home', 'switcher', 'source', 'media', 'links', 'network'];
+  // These four open as a half-screen docked sheet over the still-visible,
+  // still-interactive live page (see showChromeOverlay in TabWebViewManager),
+  // instead of replacing the whole screen like 'home'/'switcher' do.
+  var OVERLAY_VIEWS = ['source', 'media', 'links', 'network'];
   var tabsCache = [];
   var mediaCache = {};
   var linksCache = {};
@@ -36,6 +40,12 @@
     });
     var footer = document.getElementById('homeFooter');
     if (footer) footer.classList.toggle('hidden', name !== 'home');
+    document.documentElement.classList.toggle('dev-panel-overlay', OVERLAY_VIEWS.indexOf(name) > -1);
+  }
+
+  function closeOverlayPanel() {
+    if (isNative()) plugin().hideChromeOverlay();
+    showView('home');
   }
 
   function toast(message) {
@@ -154,10 +164,7 @@
       });
     }
     if (closeBtn) {
-      closeBtn.addEventListener('click', function () {
-        plugin().showChrome();
-        showView('switcher');
-      });
+      closeBtn.addEventListener('click', closeOverlayPanel);
     }
   }
 
@@ -209,10 +216,7 @@
   function wireMediaPanel() {
     var closeBtn = document.getElementById('mediaCloseBtn');
     if (closeBtn) {
-      closeBtn.addEventListener('click', function () {
-        plugin().showChrome();
-        showView('switcher');
-      });
+      closeBtn.addEventListener('click', closeOverlayPanel);
     }
   }
 
@@ -258,10 +262,7 @@
   function wireLinksPanel() {
     var closeBtn = document.getElementById('linksCloseBtn');
     if (closeBtn) {
-      closeBtn.addEventListener('click', function () {
-        plugin().showChrome();
-        showView('switcher');
-      });
+      closeBtn.addEventListener('click', closeOverlayPanel);
     }
   }
 
@@ -325,10 +326,7 @@
   function wireNetworkPanel() {
     var closeBtn = document.getElementById('networkCloseBtn');
     if (closeBtn) {
-      closeBtn.addEventListener('click', function () {
-        plugin().showChrome();
-        showView('switcher');
-      });
+      closeBtn.addEventListener('click', closeOverlayPanel);
     }
   }
 
@@ -447,9 +445,9 @@
     if (text) {
       text.textContent = label;
     }
-    if (data.status === 'ERROR' || data.status === 'UNSUPPORTED') {
-      toast(label);
-    }
+    // The banner above already shows this same message persistently — a
+    // second toast for the same event used to render as a dark bubble that
+    // could overlap the search box, so we no longer duplicate it here.
   }
 
   document.addEventListener('DOMContentLoaded', function () {
