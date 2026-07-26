@@ -502,6 +502,52 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
         }
     }
 
+    /**
+     * Dumps everything captured in the Network tab for the active tab to a
+     * JSON file under Downloads/ZovexCore. Triggered directly from the ⋮
+     * menu (a native click, not a JS call), so it reports its own result via
+     * Toast instead of a PluginCall.
+     */
+    private void exportNetworkLogForActiveTab() {
+        Integer activeId = manager.getActiveTabId();
+        if (activeId == null) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            android.widget.Toast.makeText(getContext(), "שמירת קבצים דורשת אנדרואיד 10 ומעלה", android.widget.Toast.LENGTH_LONG).show();
+            return;
+        }
+        String filename = "zovex-network-" + System.currentTimeMillis() + ".json";
+        OutputStream out = null;
+        try {
+            String json = manager.getNetworkForTab(activeId).toString(2);
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.MediaColumns.DISPLAY_NAME, filename);
+            values.put(MediaStore.MediaColumns.MIME_TYPE, "application/json");
+            // Downloads/ZovexCore — a dedicated, easy-to-find subfolder
+            // rather than dropping export files straight into Downloads.
+            values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/ZovexCore");
+            ContentResolver resolver = getContext().getContentResolver();
+            Uri uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+            if (uri == null) {
+                android.widget.Toast.makeText(getContext(), "יצירת הקובץ נכשלה", android.widget.Toast.LENGTH_LONG).show();
+                return;
+            }
+            out = resolver.openOutputStream(uri);
+            out.write(json.getBytes(StandardCharsets.UTF_8));
+            android.widget.Toast.makeText(getContext(), "נשמר: Downloads/ZovexCore/" + filename, android.widget.Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            android.widget.Toast.makeText(getContext(), "הייצוא נכשל: " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+        } finally {
+            if (out != null) {
+                try {
+                    out.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+    }
+
     // ---------- TabWebViewManager.Listener ----------
 
     @Override
@@ -668,7 +714,8 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
         popup.getMenu().add(0, 3, 2, "קישורים בדף");
         popup.getMenu().add(0, 4, 3, "רשת (Network)");
         popup.getMenu().add(0, 6, 4, "DevTools מלא (Console/Network/Elements)");
-        popup.getMenu().add(0, 5, 5, "שתף קישור");
+        popup.getMenu().add(0, 7, 5, "ייצוא רשת (JSON)");
+        popup.getMenu().add(0, 5, 6, "שתף קישור");
         popup.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
             @Override
             public boolean onMenuItemClick(android.view.MenuItem item) {
@@ -694,6 +741,9 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
                         return true;
                     case 6:
                         manager.toggleDevToolsOnActive();
+                        return true;
+                    case 7:
+                        exportNetworkLogForActiveTab();
                         return true;
                     default:
                         return false;
