@@ -1102,6 +1102,36 @@ public class TabWebViewManager {
         return erudaSource;
     }
 
+    // eruda's own copy-to-clipboard utility appends a <textarea> to
+    // document.body and calls document.execCommand('copy') WITHOUT ever
+    // checking its return value, so it shows a "Copied" success message even
+    // when the legacy command silently failed to reach the real OS clipboard
+    // — a well-known unreliability of execCommand('copy') inside Android
+    // WebView (confirmed by inspecting eruda's own bundled source). Since
+    // the textarea lives in the plain top-level document (not any shadow
+    // root), document.getSelection() reliably sees the exact text eruda just
+    // selected, so re-copying it through the modern Clipboard API right
+    // after is a safe, accurate fallback — patched in globally, once, before
+    // eruda loads, since eruda's copy calls are buried in its own bundle.
+    private static final String EXEC_COMMAND_COPY_PATCH_JS =
+            "(function(){" +
+            "  if (document.__zovexExecCommandPatched) { return; }" +
+            "  document.__zovexExecCommandPatched = true;" +
+            "  var origExec = document.execCommand.bind(document);" +
+            "  document.execCommand = function(cmd) {" +
+            "    var result = origExec.apply(document, arguments);" +
+            "    if (String(cmd).toLowerCase() === 'copy') {" +
+            "      try {" +
+            "        var sel = document.getSelection ? document.getSelection().toString() : '';" +
+            "        if (sel && navigator.clipboard && navigator.clipboard.writeText) {" +
+            "          navigator.clipboard.writeText(sel).catch(function(){});" +
+            "        }" +
+            "      } catch (e) {}" +
+            "    }" +
+            "    return result;" +
+            "  };" +
+            "})();";
+
     private static final String ERUDA_SHOW_JS =
             "(function(){" +
             "  if (typeof window.eruda === 'undefined') { return; }" +
@@ -1133,7 +1163,8 @@ public class TabWebViewManager {
         // The floating entry button is left visible on purpose (not hidden)
         // so it works like a real extension icon: tap it to open the panel,
         // tap again to close — no native call, no reload, ever, for that.
-        String js = "if (typeof window.eruda === 'undefined') {" + source + "\n}\n" +
+        String js = EXEC_COMMAND_COPY_PATCH_JS +
+                "if (typeof window.eruda === 'undefined') {" + source + "\n}\n" +
                 "(function(){" +
                 "  if (window.__zovexErudaBooted || typeof window.eruda === 'undefined') { return; }" +
                 "  window.__zovexErudaBooted = true;" +
