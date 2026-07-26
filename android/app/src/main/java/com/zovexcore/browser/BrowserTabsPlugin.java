@@ -98,6 +98,20 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
             v.setPadding(v.getPaddingLeft(), topInset, v.getPaddingRight(), v.getPaddingBottom());
             return insets;
         });
+
+        // topBar floats over contentContainer (both are independent siblings
+        // added via addContentView) rather than pushing it down, so a page
+        // with its own sticky/fixed top header renders it right under our
+        // toolbar and the two visually collide. Reserving that exact height
+        // as top padding on contentContainer shrinks each tab WebView's own
+        // viewport instead, so the page's sticky header naturally lands
+        // below our toolbar rather than underneath it.
+        topBar.getViewTreeObserver().addOnGlobalLayoutListener(() -> {
+            int barHeight = topBar.getHeight();
+            if (barHeight > 0 && contentContainer.getPaddingTop() != barHeight) {
+                contentContainer.setPadding(0, barHeight, 0, 0);
+            }
+        });
     }
 
     private ProgressBar activeProgressBar;

@@ -21,8 +21,12 @@ import android.widget.FrameLayout;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
@@ -248,6 +252,9 @@ public class TabWebViewManager {
         final WebView webView;
         String url;
         String title = "";
+        // Set only while the user has explicitly opened DevTools on this tab —
+        // see shouldInterceptRequest/injectEruda for why.
+        boolean cspRelaxForDevTools = false;
         Tab(int id, WebView webView, String url) {
             this.id = id;
             this.webView = webView;
@@ -846,6 +853,13 @@ public class TabWebViewManager {
                 }
             } catch (Exception ignored) {
             }
+            Tab tab = tabs.get(tabId);
+            if (tab != null && tab.cspRelaxForDevTools && request.isForMainFrame()) {
+                WebResourceResponse relaxed = fetchWithRelaxedCsp(request);
+                if (relaxed != null) {
+                    return relaxed;
+                }
+            }
             return super.shouldInterceptRequest(view, request);
         }
 
@@ -882,8 +896,157 @@ public class TabWebViewManager {
             view.evaluateJavascript(MEDIA_SCANNER_JS, null);
             view.evaluateJavascript(NETWORK_OBSERVER_JS, null);
             view.evaluateJavascript(NETWORK_FETCH_XHR_PATCH_JS, null);
-            injectEruda(view);
+            boolean autoOpenDevTools = tab != null && tab.cspRelaxForDevTools;
+            injectEruda(view, autoOpenDevTools);
+            if (autoOpenDevTools && tabId == (activeTabId == null ? -1 : activeTabId)) {
+                devToolsOpen = true;
+            }
         }
+    }
+
+    private static final Pattern CSP_META_TAG_PATTERN = Pattern.compile(
+            "<meta[^>]+http-equiv\\s*=\\s*[\"']?content-security-policy[\"']?[^>]*>",
+            Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Re-fetches the main document ourselves, on a background thread, so the
+     * real Content-Security-Policy header (and any CSP <meta> tag) can be
+     * stripped before the page ever renders. Without this, sites with a
+     * strict style-src silently make the injected eruda DevTools panel
+     * completely invisible — confirmed against a real Chromium engine — even
+     * though eruda reports itself as "open". CSP has no per-tool exception.
+     *
+     * This only ever runs when Tab.cspRelaxForDevTools is set, i.e. only for
+     * the one reload triggered by the user explicitly opening DevTools on
+     * that tab — never for ordinary browsing — and any failure here falls
+     * back to normal (unmodified) loading, since that must never be the
+     * reason a page fails to load.
+     */
+    private WebResourceResponse fetchWithRelaxedCsp(WebResourceRequest request) {
+        if (!"GET".equalsIgnoreCase(request.getMethod())) {
+            return null;
+        }
+        String scheme = request.getUrl().getScheme();
+        if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
+            return null;
+        }
+        String urlString = request.getUrl().toString();
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(urlString).openConnection();
+            connection.setInstanceFollowRedirects(true);
+            connection.setConnectTimeout(15000);
+            connection.setReadTimeout(15000);
+            Map<String, String> headers = request.getRequestHeaders();
+            if (headers != null) {
+                for (Map.Entry<String, String> h : headers.entrySet()) {
+                    String key = h.getKey();
+                    if (key == null) {
+                        continue;
+                    }
+                    String lower = key.toLowerCase(Locale.US);
+                    // Cookie is set explicitly below from CookieManager (the
+                    // source of truth); Accept-Encoding is skipped so
+                    // HttpURLConnection keeps handling gzip transparently —
+                    // forwarding it verbatim disables that and would hand
+                    // back undecoded bytes; conditional headers are skipped
+                    // so we always get a fresh body instead of an empty 304.
+                    if (lower.equals("cookie") || lower.equals("accept-encoding")
+                            || lower.equals("if-modified-since") || lower.equals("if-none-match")) {
+                        continue;
+                    }
+                    connection.setRequestProperty(key, h.getValue());
+                }
+            }
+            String cookie = android.webkit.CookieManager.getInstance().getCookie(urlString);
+            if (cookie != null) {
+                connection.setRequestProperty("Cookie", cookie);
+            }
+
+            int status = connection.getResponseCode();
+            String finalUrl = connection.getURL().toString();
+            List<String> setCookies = connection.getHeaderFields().get("Set-Cookie");
+            if (setCookies != null) {
+                android.webkit.CookieManager cm = android.webkit.CookieManager.getInstance();
+                for (String sc : setCookies) {
+                    cm.setCookie(finalUrl, sc);
+                }
+            }
+
+            String contentType = connection.getContentType();
+            String mimeType = "text/html";
+            String encoding = "UTF-8";
+            if (contentType != null) {
+                String[] parts = contentType.split(";");
+                if (parts.length > 0 && !parts[0].trim().isEmpty()) {
+                    mimeType = parts[0].trim();
+                }
+                for (String part : parts) {
+                    String trimmed = part.trim();
+                    if (trimmed.toLowerCase(Locale.US).startsWith("charset=")) {
+                        encoding = trimmed.substring(8).trim();
+                    }
+                }
+            }
+
+            java.io.InputStream rawStream = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
+            if (rawStream == null) {
+                return null;
+            }
+            byte[] body = readAllBytes(rawStream);
+
+            if (mimeType.toLowerCase(Locale.US).contains("html")) {
+                String html;
+                try {
+                    html = new String(body, encoding);
+                } catch (Exception e) {
+                    html = new String(body, "UTF-8");
+                    encoding = "UTF-8";
+                }
+                html = CSP_META_TAG_PATTERN.matcher(html).replaceAll("");
+                body = html.getBytes("UTF-8");
+                encoding = "UTF-8";
+            }
+
+            Map<String, String> responseHeaders = new LinkedHashMap<>();
+            for (Map.Entry<String, List<String>> entry : connection.getHeaderFields().entrySet()) {
+                String key = entry.getKey();
+                if (key == null || entry.getValue().isEmpty()) {
+                    continue;
+                }
+                String lower = key.toLowerCase(Locale.US);
+                if (lower.equals("content-security-policy") || lower.equals("content-security-policy-report-only")
+                        || lower.equals("x-webkit-csp") || lower.equals("x-content-security-policy")
+                        || lower.equals("content-encoding") || lower.equals("content-length")
+                        || lower.equals("transfer-encoding")) {
+                    continue;
+                }
+                responseHeaders.put(key, entry.getValue().get(entry.getValue().size() - 1));
+            }
+
+            String reasonPhrase = connection.getResponseMessage();
+            if (reasonPhrase == null || reasonPhrase.isEmpty()) {
+                reasonPhrase = "OK";
+            }
+            return new WebResourceResponse(mimeType, encoding, status, reasonPhrase, responseHeaders,
+                    new java.io.ByteArrayInputStream(body));
+        } catch (Exception e) {
+            return null;
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private static byte[] readAllBytes(java.io.InputStream is) throws java.io.IOException {
+        java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+        byte[] chunk = new byte[8192];
+        int n;
+        while ((n = is.read(chunk)) != -1) {
+            buf.write(chunk, 0, n);
+        }
+        return buf.toByteArray();
     }
 
     // ---------- Real DevTools console (eruda, bundled in assets/eruda.js) ----------
@@ -918,11 +1081,19 @@ public class TabWebViewManager {
         return erudaSource;
     }
 
-    private void injectEruda(WebView view) {
+    private void injectEruda(WebView view, boolean autoOpen) {
         String source = loadErudaSource();
         if (source.isEmpty()) {
             return;
         }
+        // eruda.show(name) only selects that tool as the active tab
+        // internally — it does NOT open the panel (only the no-arg
+        // eruda.show() does that), confirmed by testing against a real
+        // Chromium engine. Passing a name without the plain show() first
+        // silently leaves the panel invisible.
+        String openJs = autoOpen
+                ? "try { eruda.show(); eruda.show('network'); window.__zovexErudaOpen = true; } catch (e) {}"
+                : "";
         // The bundle's last line is a `//# sourceMappingURL=...` comment with
         // no trailing newline — appending straight onto it would get eaten by
         // that same-line comment, so a real newline has to separate them.
@@ -935,16 +1106,19 @@ public class TabWebViewManager {
                 "    var entry = eruda.get('entryBtn');" +
                 "    if (entry) { entry.hide(); }" +
                 "  } catch (e) {}" +
+                openJs +
                 "})();";
         view.evaluateJavascript(js, null);
     }
 
     /**
      * Toggles the real eruda DevTools panel inside the active tab's own page.
-     * eruda.show(name) only selects that tool as the active tab internally —
-     * it does NOT open the panel (only the no-arg eruda.show() does that),
-     * confirmed by testing against a real Chromium engine. Passing a name
-     * without the plain show() first silently leaves the panel invisible.
+     * A strict site CSP (style-src without unsafe-inline) makes eruda's
+     * shadow-DOM stylesheet get blocked, leaving the panel invisible even
+     * though it reports itself as open — so opening DevTools forces one
+     * reload of the current page through fetchWithRelaxedCsp, which strips
+     * just the CSP header/meta tag before eruda re-inits and auto-shows.
+     * Closing needs no reload — it just hides the already-injected panel.
      */
     public void toggleDevToolsOnActive() {
         Tab t = activeTab();
@@ -952,19 +1126,19 @@ public class TabWebViewManager {
             return;
         }
         devToolsOpen = !devToolsOpen;
-        t.webView.evaluateJavascript(
-                "(function(){" +
-                "  if (typeof window.eruda === 'undefined') { return; }" +
-                "  if (window.__zovexErudaOpen) {" +
-                "    eruda.hide();" +
-                "    window.__zovexErudaOpen = false;" +
-                "  } else {" +
-                "    eruda.show();" +
-                "    eruda.show('network');" +
-                "    window.__zovexErudaOpen = true;" +
-                "  }" +
-                "})();",
-                null);
+        if (devToolsOpen) {
+            t.cspRelaxForDevTools = true;
+            t.webView.reload();
+        } else {
+            t.cspRelaxForDevTools = false;
+            t.webView.evaluateJavascript(
+                    "(function(){" +
+                    "  if (typeof window.eruda === 'undefined') { return; }" +
+                    "  eruda.hide();" +
+                    "  window.__zovexErudaOpen = false;" +
+                    "})();",
+                    null);
+        }
     }
 
     private class TabWebChromeClient extends WebChromeClient {
