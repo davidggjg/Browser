@@ -819,6 +819,33 @@ public class TabWebViewManager {
                 activity.runOnUiThread(pending);
             }
         }
+
+        // Web clipboard APIs (execCommand('copy'), navigator.clipboard) go
+        // through Chromium's own permission/user-activation checks, which
+        // are known to be unreliable across Android WebView builds and can
+        // silently no-op — confirmed as the exact cause of eruda's copy
+        // buttons lying about success. Setting the system clipboard directly
+        // from native code has none of that: it's a plain Android API call,
+        // not subject to any web platform restriction or site policy.
+        @JavascriptInterface
+        public void copyToClipboard(final String text) {
+            if (text == null) {
+                return;
+            }
+            activity.runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        android.content.ClipboardManager cm =
+                                (android.content.ClipboardManager) activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                        if (cm != null) {
+                            cm.setPrimaryClip(android.content.ClipData.newPlainText("Zovex Core", text));
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
+            });
+        }
     }
 
     private class TabWebViewClient extends WebViewClient {
@@ -1106,13 +1133,19 @@ public class TabWebViewManager {
     // document.body and calls document.execCommand('copy') WITHOUT ever
     // checking its return value, so it shows a "Copied" success message even
     // when the legacy command silently failed to reach the real OS clipboard
-    // — a well-known unreliability of execCommand('copy') inside Android
-    // WebView (confirmed by inspecting eruda's own bundled source). Since
-    // the textarea lives in the plain top-level document (not any shadow
-    // root), document.getSelection() reliably sees the exact text eruda just
-    // selected, so re-copying it through the modern Clipboard API right
-    // after is a safe, accurate fallback — patched in globally, once, before
-    // eruda loads, since eruda's copy calls are buried in its own bundle.
+    // — a well-known unreliability of execCommand('copy') (and, it turns
+    // out, of navigator.clipboard.writeText() too — both are web-platform
+    // APIs subject to Chromium's own user-activation/permission checks,
+    // which are known to misbehave across Android WebView builds) confirmed
+    // by inspecting eruda's own bundled source AND by the fact a
+    // clipboard.writeText() fallback still didn't work on the real device.
+    // ZovexNative.copyToClipboard bypasses all of that: it sets the system
+    // clipboard directly from native code via ClipboardManager, which isn't
+    // a web API at all and so isn't subject to any of those restrictions.
+    // Since the textarea lives in the plain top-level document (not any
+    // shadow root), document.getSelection() reliably sees the exact text
+    // eruda just selected. Patched in globally, once, before eruda loads,
+    // since eruda's copy calls are buried inside its own bundle.
     private static final String EXEC_COMMAND_COPY_PATCH_JS =
             "(function(){" +
             "  if (document.__zovexExecCommandPatched) { return; }" +
@@ -1123,7 +1156,9 @@ public class TabWebViewManager {
             "    if (String(cmd).toLowerCase() === 'copy') {" +
             "      try {" +
             "        var sel = document.getSelection ? document.getSelection().toString() : '';" +
-            "        if (sel && navigator.clipboard && navigator.clipboard.writeText) {" +
+            "        if (sel && window.ZovexNative && window.ZovexNative.copyToClipboard) {" +
+            "          window.ZovexNative.copyToClipboard(sel);" +
+            "        } else if (sel && navigator.clipboard && navigator.clipboard.writeText) {" +
             "          navigator.clipboard.writeText(sel).catch(function(){});" +
             "        }" +
             "      } catch (e) {}" +
