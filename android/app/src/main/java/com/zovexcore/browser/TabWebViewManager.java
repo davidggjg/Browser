@@ -483,6 +483,10 @@ public class TabWebViewManager {
             hideChromeOverlay();
             return true;
         }
+        if (devToolsOpen) {
+            toggleDevToolsOnActive();
+            return true;
+        }
         if (activeTabId == null) {
             return false;
         }
@@ -860,6 +864,11 @@ public class TabWebViewManager {
             // Injected as early as possible so fetch()/XHR calls the page
             // makes right away are still caught with real method/status.
             view.evaluateJavascript(NETWORK_FETCH_XHR_PATCH_JS, null);
+            // A fresh document wipes eruda's JS state along with everything
+            // else, so our tracked "is it open" flag must reset with it.
+            if (tabId == (activeTabId == null ? -1 : activeTabId)) {
+                devToolsOpen = false;
+            }
         }
 
         @Override
@@ -883,6 +892,14 @@ public class TabWebViewManager {
     // below only matter for the rarer case of onPageFinished firing more than
     // once for the same document (frames/redirects), to avoid a duplicate init.
     private String erudaSource;
+    // Best-effort mirror of eruda's own open/closed state, kept on the native
+    // side so the hardware back button can close the panel first (see
+    // handleBackPressed) without needing an async round-trip into the page.
+    private boolean devToolsOpen = false;
+
+    public boolean isDevToolsOpen() {
+        return devToolsOpen;
+    }
 
     private String loadErudaSource() {
         if (erudaSource == null) {
@@ -922,12 +939,19 @@ public class TabWebViewManager {
         view.evaluateJavascript(js, null);
     }
 
-    /** Toggles the real eruda DevTools panel inside the active tab's own page. */
+    /**
+     * Toggles the real eruda DevTools panel inside the active tab's own page.
+     * eruda.show(name) only selects that tool as the active tab internally —
+     * it does NOT open the panel (only the no-arg eruda.show() does that),
+     * confirmed by testing against a real Chromium engine. Passing a name
+     * without the plain show() first silently leaves the panel invisible.
+     */
     public void toggleDevToolsOnActive() {
         Tab t = activeTab();
         if (t == null) {
             return;
         }
+        devToolsOpen = !devToolsOpen;
         t.webView.evaluateJavascript(
                 "(function(){" +
                 "  if (typeof window.eruda === 'undefined') { return; }" +
@@ -935,6 +959,7 @@ public class TabWebViewManager {
                 "    eruda.hide();" +
                 "    window.__zovexErudaOpen = false;" +
                 "  } else {" +
+                "    eruda.show();" +
                 "    eruda.show('network');" +
                 "    window.__zovexErudaOpen = true;" +
                 "  }" +

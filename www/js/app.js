@@ -91,8 +91,16 @@
     }
   }
 
+  // Links pasted from Hebrew/RTL apps (WhatsApp, Telegram, etc.) often carry
+  // invisible bidi/direction-control characters wrapped around them — those
+  // break the URL regexes below and silently send a real link to search
+  // instead of opening it, so strip them before doing anything else.
+  // U+200B-200F: zero-width space/joiners + LRM/RLM. U+202A-202E: embedding/
+  // override. U+2066-2069: isolates. U+FEFF: BOM / zero-width no-break space.
+  const BIDI_CONTROL_CHARS = /[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g;
+
   function navigate(raw) {
-    const query = raw.trim();
+    const query = raw.replace(BIDI_CONTROL_CHARS, '').trim();
     if (!query) return;
 
     if (looksLikeUrl(query)) {
