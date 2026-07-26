@@ -277,6 +277,23 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
     }
 
     @PluginMethod
+    public void getNetworkLog(final PluginCall call) {
+        final Integer id = call.getInt("id");
+        if (id == null) {
+            call.reject("Missing id");
+            return;
+        }
+        getActivity().runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                JSObject ret = new JSObject();
+                ret.put("items", manager.getNetworkForTab(id));
+                call.resolve(ret);
+            }
+        });
+    }
+
+    @PluginMethod
     public void getPageLinks(final PluginCall call) {
         final Integer id = call.getInt("id");
         if (id == null) {
@@ -481,6 +498,11 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
     }
 
     @Override
+    public void onNetworkRequest(JSObject networkInfo) {
+        notifyListeners("networkRequest", networkInfo);
+    }
+
+    @Override
     public void onTabProgress(JSObject progressInfo) {
         notifyListeners("tabProgress", progressInfo);
         if (activeProgressBar == null) {
@@ -607,7 +629,8 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
         popup.getMenu().add(0, 1, 0, "הצג מקור דף");
         popup.getMenu().add(0, 2, 1, "מדיה שזוהתה");
         popup.getMenu().add(0, 3, 2, "קישורים בדף");
-        popup.getMenu().add(0, 4, 3, "שתף קישור");
+        popup.getMenu().add(0, 4, 3, "רשת (Network)");
+        popup.getMenu().add(0, 5, 4, "שתף קישור");
         popup.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
             @Override
             public boolean onMenuItemClick(android.view.MenuItem item) {
@@ -625,6 +648,10 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
                         emitChromeRequested("links:" + activeId);
                         return true;
                     case 4:
+                        manager.showChrome();
+                        emitChromeRequested("network:" + activeId);
+                        return true;
+                    case 5:
                         manager.shareActiveUrl();
                         return true;
                     default:

@@ -349,6 +349,67 @@ html.native-app .app-shell {
   background: rgba(255, 255, 255, 0.16);
 }
 
+.net-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.6rem;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  font-size: 0.72rem;
+}
+.net-row .net-type {
+  flex-shrink: 0;
+  min-width: 3.6rem;
+  text-align: center;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.2rem 0.4rem;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--accent-2) 20%, transparent);
+  color: var(--accent-2);
+}
+.net-row .net-url {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #cbd5e1;
+  direction: ltr;
+  text-align: left;
+}
+.net-row .net-size {
+  flex-shrink: 0;
+  width: 4.2rem;
+  text-align: left;
+  direction: ltr;
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+.net-row .net-duration {
+  flex-shrink: 0;
+  width: 3.4rem;
+  text-align: left;
+  direction: ltr;
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+}
+.net-row button {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+}
+.net-row button:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
 .zovex-toast {
   position: fixed;
   bottom: 5.5rem;

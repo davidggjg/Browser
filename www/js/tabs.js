@@ -15,11 +15,19 @@
     return window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.BrowserTabs;
   }
 
-  var views = ['home', 'switcher', 'source', 'media', 'links'];
+  var views = ['home', 'switcher', 'source', 'media', 'links', 'network'];
   var tabsCache = [];
   var mediaCache = {};
   var linksCache = {};
+  var networkCache = {};
   var currentPanelTabId = null;
+
+  function formatBytes(n) {
+    if (!n || n <= 0) return '—';
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    return (n / (1024 * 1024)).toFixed(1) + ' MB';
+  }
 
   function showView(name) {
     views.forEach(function (v) {
@@ -257,6 +265,56 @@
     }
   }
 
+  // ---------- Network panel (DevTools-style, live) ----------
+  function renderNetwork(tabId) {
+    var list = document.getElementById('networkList');
+    var empty = document.getElementById('networkEmptyState');
+    var total = document.getElementById('networkTotal');
+    var items = networkCache[tabId] || [];
+    list.innerHTML = '';
+    if (!items.length) {
+      empty.classList.remove('hidden');
+      total.textContent = '';
+      return;
+    }
+    empty.classList.add('hidden');
+    total.textContent = items.length + ' בקשות';
+    items.forEach(function (item) {
+      var row = document.createElement('div');
+      row.className = 'net-row';
+      row.innerHTML =
+        '<span class="net-type">' + escapeHtml(item.type || 'other') + '</span>' +
+        '<span class="net-url" dir="ltr" title="' + escapeHtml(item.url) + '">' + escapeHtml(item.url) + '</span>' +
+        '<span class="net-size">' + formatBytes(item.transferSize) + '</span>' +
+        '<span class="net-duration">' + Math.round(item.duration || 0) + ' ms</span>' +
+        '<button data-copy>העתק</button>';
+      row.querySelector('[data-copy]').addEventListener('click', function () {
+        navigator.clipboard.writeText(item.url).then(function () { toast('הקישור הועתק'); });
+      });
+      list.appendChild(row);
+    });
+    list.scrollTop = list.scrollHeight;
+  }
+
+  function openNetworkPanel(tabId) {
+    currentPanelTabId = tabId;
+    showView('network');
+    plugin().getNetworkLog({ id: tabId }).then(function (res) {
+      networkCache[tabId] = res.items || [];
+      renderNetwork(tabId);
+    });
+  }
+
+  function wireNetworkPanel() {
+    var closeBtn = document.getElementById('networkCloseBtn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function () {
+        plugin().showChrome();
+        showView('switcher');
+      });
+    }
+  }
+
   // ---------- Native events ----------
   function registerNativeListeners() {
     var p = plugin();
@@ -281,6 +339,8 @@
         openMediaPanel(parseInt(reason.split(':')[1], 10));
       } else if (reason.indexOf('links:') === 0) {
         openLinksPanel(parseInt(reason.split(':')[1], 10));
+      } else if (reason.indexOf('network:') === 0) {
+        openNetworkPanel(parseInt(reason.split(':')[1], 10));
       }
     });
 
@@ -298,6 +358,7 @@
       tabsCache = tabsCache.filter(function (t) { return t.id !== data.id; });
       delete mediaCache[data.id];
       delete linksCache[data.id];
+      delete networkCache[data.id];
       renderTabs();
     });
 
@@ -309,6 +370,25 @@
       }
       if (currentPanelTabId === info.tabId) {
         renderMedia(info.tabId);
+      }
+    });
+
+    p.addListener('networkRequest', function (info) {
+      var list = networkCache[info.tabId] || [];
+      list.push({
+        url: info.url,
+        type: info.type,
+        transferSize: info.transferSize,
+        encodedSize: info.encodedSize,
+        decodedSize: info.decodedSize,
+        duration: info.duration
+      });
+      if (list.length > 300) {
+        list.shift();
+      }
+      networkCache[info.tabId] = list;
+      if (currentPanelTabId === info.tabId) {
+        renderNetwork(info.tabId);
       }
     });
 
@@ -341,11 +421,15 @@
 
   function handleTorStatus(data) {
     var text = document.getElementById('onionBannerText');
-    if (text && TOR_STATUS_TEXT[data.status]) {
-      text.textContent = TOR_STATUS_TEXT[data.status];
+    var label = TOR_STATUS_TEXT[data.status] || data.status;
+    if (data.status === 'ERROR' && data.message) {
+      label = 'שגיאת Tor: ' + data.message;
+    }
+    if (text) {
+      text.textContent = label;
     }
     if (data.status === 'ERROR' || data.status === 'UNSUPPORTED') {
-      toast(TOR_STATUS_TEXT[data.status]);
+      toast(label);
     }
   }
 
@@ -353,6 +437,7 @@
     wireSourcePanel();
     wireMediaPanel();
     wireLinksPanel();
+    wireNetworkPanel();
     var newTabBtn = document.getElementById('switcherNewTabBtn');
     if (newTabBtn) {
       newTabBtn.addEventListener('click', function () {

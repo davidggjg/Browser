@@ -21,6 +21,7 @@ import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 
 import java.util.LinkedHashMap;
+import java.util.LinkedList;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
@@ -41,6 +42,7 @@ public class TabWebViewManager {
         void onActiveTabChanged(Integer tabId);
         void onMediaDetected(JSObject mediaInfo);
         void onTabProgress(JSObject progressInfo);
+        void onNetworkRequest(JSObject networkInfo);
     }
 
     private static final Pattern MEDIA_URL_PATTERN = Pattern.compile(
@@ -140,6 +142,42 @@ public class TabWebViewManager {
             "  }" +
             "})();";
 
+    /**
+     * A real DevTools-style Network log, built from the page's own Resource
+     * Timing API instead of native request interception — gives real
+     * transfer sizes (post-compression) for every resource the page loads,
+     * continuously, without touching the actual network traffic at all.
+     */
+    private static final String NETWORK_OBSERVER_JS =
+            "(function(){" +
+            "  if (window.__zovexNetInstalled) { return; }" +
+            "  window.__zovexNetInstalled = true;" +
+            "  function report(entry, type) {" +
+            "    try {" +
+            "      if (!window.ZovexNative || !entry || !entry.name) { return; }" +
+            "      window.ZovexNative.reportNetwork(JSON.stringify({" +
+            "        url: entry.name," +
+            "        type: type || entry.initiatorType || 'other'," +
+            "        transferSize: Math.round(entry.transferSize || 0)," +
+            "        encodedSize: Math.round(entry.encodedBodySize || 0)," +
+            "        decodedSize: Math.round(entry.decodedBodySize || 0)," +
+            "        duration: Math.round(entry.duration || 0)" +
+            "      }));" +
+            "    } catch (e) {}" +
+            "  }" +
+            "  try {" +
+            "    performance.getEntriesByType('resource').forEach(function (e) { report(e); });" +
+            "    var nav = performance.getEntriesByType('navigation')[0];" +
+            "    if (nav) { report({ name: location.href, initiatorType: 'document', transferSize: nav.transferSize, encodedBodySize: nav.encodedBodySize, decodedBodySize: nav.decodedBodySize, duration: nav.duration }); }" +
+            "  } catch (e) {}" +
+            "  try {" +
+            "    var po = new PerformanceObserver(function (list) {" +
+            "      list.getEntries().forEach(function (e) { report(e); });" +
+            "    });" +
+            "    po.observe({ entryTypes: ['resource'] });" +
+            "  } catch (e) {}" +
+            "})();";
+
     private static class Tab {
         final int id;
         final WebView webView;
@@ -164,6 +202,8 @@ public class TabWebViewManager {
     private final Map<Integer, Runnable> pendingLinksCallbacks = new ConcurrentHashMap<>();
     private final Map<Integer, String> pendingLinksResults = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Integer, LinkedHashMap<String, JSObject>> mediaByTab = new ConcurrentHashMap<>();
+    private static final int MAX_NETWORK_ENTRIES = 300;
+    private final ConcurrentHashMap<Integer, LinkedList<JSObject>> networkByTab = new ConcurrentHashMap<>();
 
     private int nextId = 1;
     private Integer activeTabId = null;
@@ -231,6 +271,7 @@ public class TabWebViewManager {
         contentContainer.removeView(tab.webView);
         tab.webView.destroy();
         mediaByTab.remove(id);
+        networkByTab.remove(id);
         pendingSourceCallbacks.remove(id);
         pendingSourceResults.remove(id);
         pendingLinksCallbacks.remove(id);
@@ -314,6 +355,19 @@ public class TabWebViewManager {
         if (map != null) {
             synchronized (map) {
                 for (JSObject o : map.values()) {
+                    arr.put(o);
+                }
+            }
+        }
+        return arr;
+    }
+
+    public JSArray getNetworkForTab(int tabId) {
+        LinkedList<JSObject> list = networkByTab.get(tabId);
+        JSArray arr = new JSArray();
+        if (list != null) {
+            synchronized (list) {
+                for (JSObject o : list) {
                     arr.put(o);
                 }
             }
@@ -473,6 +527,41 @@ public class TabWebViewManager {
         }
     }
 
+    private void reportNetwork(int tabId, String url, String type, long transferSize, long encodedSize, long decodedSize, long duration) {
+        LinkedList<JSObject> list = networkByTab.get(tabId);
+        if (list == null) {
+            list = new LinkedList<>();
+            LinkedList<JSObject> existing = networkByTab.putIfAbsent(tabId, list);
+            if (existing != null) {
+                list = existing;
+            }
+        }
+        JSObject item = new JSObject();
+        item.put("url", url);
+        item.put("type", type);
+        item.put("transferSize", transferSize);
+        item.put("encodedSize", encodedSize);
+        item.put("decodedSize", decodedSize);
+        item.put("duration", duration);
+        synchronized (list) {
+            list.addLast(item);
+            while (list.size() > MAX_NETWORK_ENTRIES) {
+                list.removeFirst();
+            }
+        }
+        if (listener != null) {
+            JSObject evt = new JSObject();
+            evt.put("tabId", tabId);
+            evt.put("url", url);
+            evt.put("type", type);
+            evt.put("transferSize", transferSize);
+            evt.put("encodedSize", encodedSize);
+            evt.put("decodedSize", decodedSize);
+            evt.put("duration", duration);
+            listener.onNetworkRequest(evt);
+        }
+    }
+
     private String buildErrorHtml(String message) {
         return "<!DOCTYPE html><html lang='he' dir='rtl'><head><meta charset='utf-8'>" +
                 "<meta name='viewport' content='width=device-width, initial-scale=1'>" +
@@ -522,6 +611,24 @@ public class TabWebViewManager {
                 if (url != null && (url.startsWith("http://") || url.startsWith("https://"))) {
                     TabWebViewManager.this.reportMedia(tabId, enforceHttps(url), kind, "element");
                 }
+            } catch (Exception ignored) {
+            }
+        }
+
+        @JavascriptInterface
+        public void reportNetwork(String json) {
+            try {
+                JSObject o = new JSObject(json);
+                String url = o.getString("url", null);
+                if (url == null || !(url.startsWith("http://") || url.startsWith("https://"))) {
+                    return;
+                }
+                String type = o.getString("type", "other");
+                long transferSize = o.optLong("transferSize", 0);
+                long encodedSize = o.optLong("encodedSize", 0);
+                long decodedSize = o.optLong("decodedSize", 0);
+                long duration = o.optLong("duration", 0);
+                TabWebViewManager.this.reportNetwork(tabId, enforceHttps(url), type, transferSize, encodedSize, decodedSize, duration);
             } catch (Exception ignored) {
             }
         }
@@ -604,6 +711,7 @@ public class TabWebViewManager {
                 notifyTabUpdated(tab);
             }
             view.evaluateJavascript(MEDIA_SCANNER_JS, null);
+            view.evaluateJavascript(NETWORK_OBSERVER_JS, null);
         }
     }
 
