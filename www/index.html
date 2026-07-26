@@ -159,7 +159,17 @@
             <button id="networkCloseBtn" type="button" class="panel-action-btn panel-action-btn-ghost">סגור</button>
           </div>
         </div>
-        <div id="networkList" class="flex flex-col gap-1.5"></div>
+        <div class="net-scroll">
+          <div class="net-row net-header">
+            <span class="net-col-name">Name</span>
+            <span class="net-col-method">Method</span>
+            <span class="net-col-status">Status</span>
+            <span class="net-col-type">Type</span>
+            <span class="net-col-size">Size</span>
+            <span class="net-col-time">Time</span>
+          </div>
+          <div id="networkList"></div>
+        </div>
         <p id="networkEmptyState" class="mt-8 text-center text-sm text-slate-500">אין עדיין בקשות רשת — גלשו קצת בדף.</p>
       </section>
 

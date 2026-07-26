@@ -266,6 +266,22 @@
   }
 
   // ---------- Network panel (DevTools-style, live) ----------
+  function shortNetworkName(url) {
+    try {
+      var u = new URL(url);
+      var last = u.pathname.split('/').filter(Boolean).pop();
+      return (last || u.hostname) + (u.search || '');
+    } catch (e) {
+      return url;
+    }
+  }
+
+  function statusClass(status) {
+    if (!status || status === 0) return 'net-status-pending';
+    if (status >= 200 && status < 400) return 'net-status-ok';
+    return 'net-status-fail';
+  }
+
   function renderNetwork(tabId) {
     var list = document.getElementById('networkList');
     var empty = document.getElementById('networkEmptyState');
@@ -281,19 +297,20 @@
     total.textContent = items.length + ' בקשות';
     items.forEach(function (item) {
       var row = document.createElement('div');
-      row.className = 'net-row';
+      row.className = 'net-row net-data';
+      row.title = item.url;
       row.innerHTML =
-        '<span class="net-type">' + escapeHtml(item.type || 'other') + '</span>' +
-        '<span class="net-url" dir="ltr" title="' + escapeHtml(item.url) + '">' + escapeHtml(item.url) + '</span>' +
-        '<span class="net-size">' + formatBytes(item.transferSize) + '</span>' +
-        '<span class="net-duration">' + Math.round(item.duration || 0) + ' ms</span>' +
-        '<button data-copy>העתק</button>';
-      row.querySelector('[data-copy]').addEventListener('click', function () {
-        navigator.clipboard.writeText(item.url).then(function () { toast('הקישור הועתק'); });
+        '<span class="net-col-name">' + escapeHtml(shortNetworkName(item.url)) + '</span>' +
+        '<span class="net-col-method">' + escapeHtml(item.method || 'GET') + '</span>' +
+        '<span class="net-col-status ' + statusClass(item.status) + '">' + (item.status || '—') + '</span>' +
+        '<span class="net-col-type">' + escapeHtml(item.type || 'other') + '</span>' +
+        '<span class="net-col-size">' + formatBytes(item.transferSize) + '</span>' +
+        '<span class="net-col-time">' + Math.round(item.duration || 0) + ' ms</span>';
+      row.addEventListener('click', function () {
+        navigator.clipboard.writeText(item.url).then(function () { toast('הקישור הועתק: ' + item.url); });
       });
       list.appendChild(row);
     });
-    list.scrollTop = list.scrollHeight;
   }
 
   function openNetworkPanel(tabId) {
@@ -378,6 +395,8 @@
       list.push({
         url: info.url,
         type: info.type,
+        method: info.method,
+        status: info.status,
         transferSize: info.transferSize,
         encodedSize: info.encodedSize,
         decodedSize: info.decodedSize,

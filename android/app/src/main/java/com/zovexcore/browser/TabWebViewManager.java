@@ -152,12 +152,16 @@ public class TabWebViewManager {
             "(function(){" +
             "  if (window.__zovexNetInstalled) { return; }" +
             "  window.__zovexNetInstalled = true;" +
-            "  function report(entry, type) {" +
+            "  function report(entry) {" +
             "    try {" +
             "      if (!window.ZovexNative || !entry || !entry.name) { return; }" +
+            "      var type = entry.initiatorType || 'other';" +
+            "      if (type === 'fetch' || type === 'xmlhttprequest') { return; }" +
             "      window.ZovexNative.reportNetwork(JSON.stringify({" +
             "        url: entry.name," +
-            "        type: type || entry.initiatorType || 'other'," +
+            "        type: type," +
+            "        method: 'GET'," +
+            "        status: entry.responseStatus || 0," +
             "        transferSize: Math.round(entry.transferSize || 0)," +
             "        encodedSize: Math.round(entry.encodedBodySize || 0)," +
             "        decodedSize: Math.round(entry.decodedBodySize || 0)," +
@@ -168,7 +172,7 @@ public class TabWebViewManager {
             "  try {" +
             "    performance.getEntriesByType('resource').forEach(function (e) { report(e); });" +
             "    var nav = performance.getEntriesByType('navigation')[0];" +
-            "    if (nav) { report({ name: location.href, initiatorType: 'document', transferSize: nav.transferSize, encodedBodySize: nav.encodedBodySize, decodedBodySize: nav.decodedBodySize, duration: nav.duration }); }" +
+            "    if (nav) { report({ name: location.href, initiatorType: 'document', responseStatus: 200, transferSize: nav.transferSize, encodedBodySize: nav.encodedBodySize, decodedBodySize: nav.decodedBodySize, duration: nav.duration }); }" +
             "  } catch (e) {}" +
             "  try {" +
             "    var po = new PerformanceObserver(function (list) {" +
@@ -176,6 +180,66 @@ public class TabWebViewManager {
             "    });" +
             "    po.observe({ entryTypes: ['resource'] });" +
             "  } catch (e) {}" +
+            "})();";
+
+    /**
+     * Resource Timing can't tell us HTTP method or status for fetch()/XHR
+     * calls (mostly analytics/API beacons), so this wraps both directly to
+     * report those with real data. Injected at onPageStarted (before the
+     * page's own scripts run) so early calls are caught too.
+     */
+    private static final String NETWORK_FETCH_XHR_PATCH_JS =
+            "(function(){" +
+            "  if (window.__zovexFetchPatched) { return; }" +
+            "  window.__zovexFetchPatched = true;" +
+            "  function reportReq(url, method, status, size, duration) {" +
+            "    try {" +
+            "      if (!window.ZovexNative || !url) { return; }" +
+            "      window.ZovexNative.reportNetwork(JSON.stringify({" +
+            "        url: url, type: 'fetch', method: method || 'GET', status: status || 0," +
+            "        transferSize: size || 0, encodedSize: size || 0, decodedSize: size || 0, duration: Math.round(duration || 0)" +
+            "      }));" +
+            "    } catch (e) {}" +
+            "  }" +
+            "  var origFetch = window.fetch;" +
+            "  if (origFetch) {" +
+            "    window.fetch = function (input, init) {" +
+            "      var url = (typeof input === 'string') ? input : ((input && input.url) || '');" +
+            "      var method = (init && init.method) || (input && input.method) || 'GET';" +
+            "      var start = (window.performance && performance.now) ? performance.now() : Date.now();" +
+            "      return origFetch.apply(this, arguments).then(function (res) {" +
+            "        try {" +
+            "          var len = parseInt((res.headers && res.headers.get('content-length')) || '0', 10) || 0;" +
+            "          reportReq(res.url || url, method, res.status, len, performance.now() - start);" +
+            "        } catch (e) {}" +
+            "        return res;" +
+            "      }, function (err) {" +
+            "        reportReq(url, method, 0, 0, performance.now() - start);" +
+            "        throw err;" +
+            "      });" +
+            "    };" +
+            "  }" +
+            "  var OrigXHR = window.XMLHttpRequest;" +
+            "  if (OrigXHR) {" +
+            "    var origOpen = OrigXHR.prototype.open;" +
+            "    var origSend = OrigXHR.prototype.send;" +
+            "    OrigXHR.prototype.open = function (method, url) {" +
+            "      this.__zovexMethod = method;" +
+            "      this.__zovexUrl = url;" +
+            "      return origOpen.apply(this, arguments);" +
+            "    };" +
+            "    OrigXHR.prototype.send = function () {" +
+            "      var xhr = this;" +
+            "      var start = (window.performance && performance.now) ? performance.now() : Date.now();" +
+            "      xhr.addEventListener('loadend', function () {" +
+            "        try {" +
+            "          var len = parseInt(xhr.getResponseHeader('content-length') || '0', 10) || (xhr.responseText ? xhr.responseText.length : 0);" +
+            "          reportReq(xhr.__zovexUrl || '', xhr.__zovexMethod || 'GET', xhr.status, len, performance.now() - start);" +
+            "        } catch (e) {}" +
+            "      });" +
+            "      return origSend.apply(this, arguments);" +
+            "    };" +
+            "  }" +
             "})();";
 
     private static class Tab {
@@ -527,7 +591,7 @@ public class TabWebViewManager {
         }
     }
 
-    private void reportNetwork(int tabId, String url, String type, long transferSize, long encodedSize, long decodedSize, long duration) {
+    private void reportNetwork(int tabId, String url, String type, String method, int status, long transferSize, long encodedSize, long decodedSize, long duration) {
         LinkedList<JSObject> list = networkByTab.get(tabId);
         if (list == null) {
             list = new LinkedList<>();
@@ -539,6 +603,8 @@ public class TabWebViewManager {
         JSObject item = new JSObject();
         item.put("url", url);
         item.put("type", type);
+        item.put("method", method);
+        item.put("status", status);
         item.put("transferSize", transferSize);
         item.put("encodedSize", encodedSize);
         item.put("decodedSize", decodedSize);
@@ -554,6 +620,8 @@ public class TabWebViewManager {
             evt.put("tabId", tabId);
             evt.put("url", url);
             evt.put("type", type);
+            evt.put("method", method);
+            evt.put("status", status);
             evt.put("transferSize", transferSize);
             evt.put("encodedSize", encodedSize);
             evt.put("decodedSize", decodedSize);
@@ -624,11 +692,13 @@ public class TabWebViewManager {
                     return;
                 }
                 String type = o.getString("type", "other");
+                String method = o.getString("method", "GET");
+                int status = o.optInt("status", 0);
                 long transferSize = o.optLong("transferSize", 0);
                 long encodedSize = o.optLong("encodedSize", 0);
                 long decodedSize = o.optLong("decodedSize", 0);
                 long duration = o.optLong("duration", 0);
-                TabWebViewManager.this.reportNetwork(tabId, enforceHttps(url), type, transferSize, encodedSize, decodedSize, duration);
+                TabWebViewManager.this.reportNetwork(tabId, enforceHttps(url), type, method, status, transferSize, encodedSize, decodedSize, duration);
             } catch (Exception ignored) {
             }
         }
@@ -703,6 +773,14 @@ public class TabWebViewManager {
         }
 
         @Override
+        public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+            super.onPageStarted(view, url, favicon);
+            // Injected as early as possible so fetch()/XHR calls the page
+            // makes right away are still caught with real method/status.
+            view.evaluateJavascript(NETWORK_FETCH_XHR_PATCH_JS, null);
+        }
+
+        @Override
         public void onPageFinished(WebView view, String url) {
             super.onPageFinished(view, url);
             Tab tab = tabs.get(tabId);
@@ -712,6 +790,7 @@ public class TabWebViewManager {
             }
             view.evaluateJavascript(MEDIA_SCANNER_JS, null);
             view.evaluateJavascript(NETWORK_OBSERVER_JS, null);
+            view.evaluateJavascript(NETWORK_FETCH_XHR_PATCH_JS, null);
         }
     }
 
