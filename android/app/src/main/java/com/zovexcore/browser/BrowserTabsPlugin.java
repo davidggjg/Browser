@@ -239,6 +239,17 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
     }
 
     @PluginMethod
+    public void toggleDevTools(final PluginCall call) {
+        getActivity().runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                manager.toggleDevToolsOnActive();
+                call.resolve();
+            }
+        });
+    }
+
+    @PluginMethod
     public void shareActive(final PluginCall call) {
         getActivity().runOnUiThread(new Runnable() {
             @Override
@@ -642,7 +653,8 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
         popup.getMenu().add(0, 2, 1, "מדיה שזוהתה");
         popup.getMenu().add(0, 3, 2, "קישורים בדף");
         popup.getMenu().add(0, 4, 3, "רשת (Network)");
-        popup.getMenu().add(0, 5, 4, "שתף קישור");
+        popup.getMenu().add(0, 6, 4, "DevTools מלא (Console/Network/Elements)");
+        popup.getMenu().add(0, 5, 5, "שתף קישור");
         popup.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
             @Override
             public boolean onMenuItemClick(android.view.MenuItem item) {
@@ -665,6 +677,9 @@ public class BrowserTabsPlugin extends Plugin implements TabWebViewManager.Liste
                         return true;
                     case 5:
                         manager.shareActiveUrl();
+                        return true;
+                    case 6:
+                        manager.toggleDevToolsOnActive();
                         return true;
                     default:
                         return false;

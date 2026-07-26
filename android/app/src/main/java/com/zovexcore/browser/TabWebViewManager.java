@@ -873,7 +873,73 @@ public class TabWebViewManager {
             view.evaluateJavascript(MEDIA_SCANNER_JS, null);
             view.evaluateJavascript(NETWORK_OBSERVER_JS, null);
             view.evaluateJavascript(NETWORK_FETCH_XHR_PATCH_JS, null);
+            injectEruda(view);
         }
+    }
+
+    // ---------- Real DevTools console (eruda, bundled in assets/eruda.js) ----------
+    // A fresh page load wipes the JS realm, so the bundle has to be
+    // re-delivered on every onPageFinished — the two "already booted" guards
+    // below only matter for the rarer case of onPageFinished firing more than
+    // once for the same document (frames/redirects), to avoid a duplicate init.
+    private String erudaSource;
+
+    private String loadErudaSource() {
+        if (erudaSource == null) {
+            try (java.io.InputStream is = activity.getAssets().open("eruda.js")) {
+                java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+                byte[] chunk = new byte[8192];
+                int n;
+                while ((n = is.read(chunk)) != -1) {
+                    buf.write(chunk, 0, n);
+                }
+                erudaSource = buf.toString("UTF-8");
+            } catch (Exception e) {
+                erudaSource = "";
+            }
+        }
+        return erudaSource;
+    }
+
+    private void injectEruda(WebView view) {
+        String source = loadErudaSource();
+        if (source.isEmpty()) {
+            return;
+        }
+        // The bundle's last line is a `//# sourceMappingURL=...` comment with
+        // no trailing newline — appending straight onto it would get eaten by
+        // that same-line comment, so a real newline has to separate them.
+        String js = "if (typeof window.eruda === 'undefined') {" + source + "\n}\n" +
+                "(function(){" +
+                "  if (window.__zovexErudaBooted || typeof window.eruda === 'undefined') { return; }" +
+                "  window.__zovexErudaBooted = true;" +
+                "  try {" +
+                "    eruda.init({ tool: ['console', 'elements', 'network', 'resources', 'sources', 'info'] });" +
+                "    var entry = eruda.get('entryBtn');" +
+                "    if (entry) { entry.hide(); }" +
+                "  } catch (e) {}" +
+                "})();";
+        view.evaluateJavascript(js, null);
+    }
+
+    /** Toggles the real eruda DevTools panel inside the active tab's own page. */
+    public void toggleDevToolsOnActive() {
+        Tab t = activeTab();
+        if (t == null) {
+            return;
+        }
+        t.webView.evaluateJavascript(
+                "(function(){" +
+                "  if (typeof window.eruda === 'undefined') { return; }" +
+                "  if (window.__zovexErudaOpen) {" +
+                "    eruda.hide();" +
+                "    window.__zovexErudaOpen = false;" +
+                "  } else {" +
+                "    eruda.show('network');" +
+                "    window.__zovexErudaOpen = true;" +
+                "  }" +
+                "})();",
+                null);
     }
 
     private class TabWebChromeClient extends WebChromeClient {
