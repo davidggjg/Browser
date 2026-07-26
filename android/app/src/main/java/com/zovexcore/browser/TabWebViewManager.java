@@ -252,9 +252,15 @@ public class TabWebViewManager {
         final WebView webView;
         String url;
         String title = "";
-        // Set only while the user has explicitly opened DevTools on this tab —
-        // see shouldInterceptRequest/injectEruda for why.
+        // Sticky for the tab's lifetime once DevTools has been activated at
+        // least once — see shouldInterceptRequest/injectEruda for why.
         boolean cspRelaxForDevTools = false;
+        // Whether the panel itself should auto-show after the *next*
+        // injection (a fresh page load resets the in-page JS state, so this
+        // is what makes DevTools "stay attached" across navigation while
+        // open, without reopening it again after the user explicitly closed
+        // it and then navigated elsewhere).
+        boolean devToolsWantOpen = false;
         Tab(int id, WebView webView, String url) {
             this.id = id;
             this.webView = webView;
@@ -896,10 +902,19 @@ public class TabWebViewManager {
             view.evaluateJavascript(MEDIA_SCANNER_JS, null);
             view.evaluateJavascript(NETWORK_OBSERVER_JS, null);
             view.evaluateJavascript(NETWORK_FETCH_XHR_PATCH_JS, null);
-            boolean autoOpenDevTools = tab != null && tab.cspRelaxForDevTools;
-            injectEruda(view, autoOpenDevTools);
-            if (autoOpenDevTools && tabId == (activeTabId == null ? -1 : activeTabId)) {
-                devToolsOpen = true;
+            // eruda (with its always-visible floating entry button) is only
+            // injected once the user has explicitly activated DevTools on
+            // this tab at least once — never silently on every page — so it
+            // only "lights up like a circle on the side" after being asked
+            // for, matching a real extension icon rather than always-on.
+            // Whether the panel itself pops open again on this particular
+            // load additionally depends on devToolsWantOpen, so explicitly
+            // closing it and then navigating elsewhere doesn't reopen it.
+            if (tab != null && tab.cspRelaxForDevTools) {
+                injectEruda(view, tab.devToolsWantOpen);
+                if (tab.devToolsWantOpen && tabId == (activeTabId == null ? -1 : activeTabId)) {
+                    devToolsOpen = true;
+                }
             }
         }
     }
@@ -1017,6 +1032,12 @@ public class TabWebViewManager {
                 String lower = key.toLowerCase(Locale.US);
                 if (lower.equals("content-security-policy") || lower.equals("content-security-policy-report-only")
                         || lower.equals("x-webkit-csp") || lower.equals("x-content-security-policy")
+                        // Some sites also lock down clipboard-write via
+                        // Permissions-Policy/Feature-Policy, which silently
+                        // breaks eruda's own copy-to-clipboard buttons in
+                        // its Network/Console tools — same class of problem
+                        // as the CSP style block, same fix.
+                        || lower.equals("permissions-policy") || lower.equals("feature-policy")
                         || lower.equals("content-encoding") || lower.equals("content-length")
                         || lower.equals("transfer-encoding")) {
                     continue;
@@ -1081,6 +1102,20 @@ public class TabWebViewManager {
         return erudaSource;
     }
 
+    private static final String ERUDA_SHOW_JS =
+            "(function(){" +
+            "  if (typeof window.eruda === 'undefined') { return; }" +
+            "  eruda.show();" +
+            "  eruda.show('network');" +
+            "  window.__zovexErudaOpen = true;" +
+            "})();";
+    private static final String ERUDA_HIDE_JS =
+            "(function(){" +
+            "  if (typeof window.eruda === 'undefined') { return; }" +
+            "  eruda.hide();" +
+            "  window.__zovexErudaOpen = false;" +
+            "})();";
+
     private void injectEruda(WebView view, boolean autoOpen) {
         String source = loadErudaSource();
         if (source.isEmpty()) {
@@ -1091,20 +1126,19 @@ public class TabWebViewManager {
         // eruda.show() does that), confirmed by testing against a real
         // Chromium engine. Passing a name without the plain show() first
         // silently leaves the panel invisible.
-        String openJs = autoOpen
-                ? "try { eruda.show(); eruda.show('network'); window.__zovexErudaOpen = true; } catch (e) {}"
-                : "";
+        String openJs = autoOpen ? "try {" + ERUDA_SHOW_JS + "} catch (e) {}" : "";
         // The bundle's last line is a `//# sourceMappingURL=...` comment with
         // no trailing newline — appending straight onto it would get eaten by
         // that same-line comment, so a real newline has to separate them.
+        // The floating entry button is left visible on purpose (not hidden)
+        // so it works like a real extension icon: tap it to open the panel,
+        // tap again to close — no native call, no reload, ever, for that.
         String js = "if (typeof window.eruda === 'undefined') {" + source + "\n}\n" +
                 "(function(){" +
                 "  if (window.__zovexErudaBooted || typeof window.eruda === 'undefined') { return; }" +
                 "  window.__zovexErudaBooted = true;" +
                 "  try {" +
                 "    eruda.init({ tool: ['console', 'elements', 'network', 'resources', 'sources', 'info'] });" +
-                "    var entry = eruda.get('entryBtn');" +
-                "    if (entry) { entry.hide(); }" +
                 "  } catch (e) {}" +
                 openJs +
                 "})();";
@@ -1112,33 +1146,32 @@ public class TabWebViewManager {
     }
 
     /**
-     * Toggles the real eruda DevTools panel inside the active tab's own page.
+     * Turns the real eruda DevTools on/off for the active tab.
      * A strict site CSP (style-src without unsafe-inline) makes eruda's
-     * shadow-DOM stylesheet get blocked, leaving the panel invisible even
-     * though it reports itself as open — so opening DevTools forces one
-     * reload of the current page through fetchWithRelaxedCsp, which strips
-     * just the CSP header/meta tag before eruda re-inits and auto-shows.
-     * Closing needs no reload — it just hides the already-injected panel.
+     * shadow-DOM stylesheet get blocked, leaving the panel (and its floating
+     * entry-button "extension icon") invisible even though it reports itself
+     * as open — so the *first* activation on a given page load forces one
+     * reload through fetchWithRelaxedCsp, which strips just the CSP
+     * header/meta tag before eruda re-inits and auto-shows. Every toggle
+     * after that — from this menu item or by tapping eruda's own entry
+     * button directly on the page — is a plain JS show()/hide() call with
+     * no reload at all.
      */
     public void toggleDevToolsOnActive() {
         Tab t = activeTab();
         if (t == null) {
             return;
         }
-        devToolsOpen = !devToolsOpen;
-        if (devToolsOpen) {
+        if (!t.cspRelaxForDevTools) {
+            devToolsOpen = true;
             t.cspRelaxForDevTools = true;
+            t.devToolsWantOpen = true;
             t.webView.reload();
-        } else {
-            t.cspRelaxForDevTools = false;
-            t.webView.evaluateJavascript(
-                    "(function(){" +
-                    "  if (typeof window.eruda === 'undefined') { return; }" +
-                    "  eruda.hide();" +
-                    "  window.__zovexErudaOpen = false;" +
-                    "})();",
-                    null);
+            return;
         }
+        devToolsOpen = !devToolsOpen;
+        t.devToolsWantOpen = devToolsOpen;
+        t.webView.evaluateJavascript(devToolsOpen ? ERUDA_SHOW_JS : ERUDA_HIDE_JS, null);
     }
 
     private class TabWebChromeClient extends WebChromeClient {
