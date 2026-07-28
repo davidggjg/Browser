@@ -950,6 +950,29 @@ public class TabWebViewManager {
             "<meta[^>]+http-equiv\\s*=\\s*[\"']?content-security-policy[\"']?[^>]*>",
             Pattern.CASE_INSENSITIVE);
 
+    // Every response header, across the various standards a site can use, that
+    // could stop our injected DevTools from opening or working — grouped so
+    // it's obvious what each is defending against:
+    //  - CSP family: blocks eruda's stylesheet (making it invisible) and,
+    //    depending on directives, its own script execution/eval.
+    //  - Permissions/Feature-Policy: can lock down clipboard-write, breaking
+    //    eruda's copy buttons the same way CSP breaks its visuals.
+    //  - Cross-Origin-*-Policy / X-Frame-Options: isolation headers that can
+    //    restrict cross-origin interaction some sites' own scripts rely on;
+    //    harmless to drop since we're not framing anything ourselves.
+    //  - Clear-Site-Data: would wipe storage/cookies on this exact reload,
+    //    which could undo the very state we're trying to inspect.
+    // Only ever applied to the one reload triggered by explicitly opening
+    // DevTools (see Tab.cspRelaxForDevTools) — never to ordinary browsing.
+    private static final java.util.Set<String> STRIPPED_RESPONSE_HEADERS = new java.util.HashSet<>(java.util.Arrays.asList(
+            "content-security-policy", "content-security-policy-report-only",
+            "x-webkit-csp", "x-content-security-policy",
+            "permissions-policy", "feature-policy",
+            "cross-origin-opener-policy", "cross-origin-embedder-policy", "cross-origin-resource-policy",
+            "x-frame-options", "clear-site-data",
+            "content-encoding", "content-length", "transfer-encoding"
+    ));
+
     /**
      * Re-fetches the main document ourselves, on a background thread, so the
      * real Content-Security-Policy header (and any CSP <meta> tag) can be
@@ -1057,16 +1080,7 @@ public class TabWebViewManager {
                     continue;
                 }
                 String lower = key.toLowerCase(Locale.US);
-                if (lower.equals("content-security-policy") || lower.equals("content-security-policy-report-only")
-                        || lower.equals("x-webkit-csp") || lower.equals("x-content-security-policy")
-                        // Some sites also lock down clipboard-write via
-                        // Permissions-Policy/Feature-Policy, which silently
-                        // breaks eruda's own copy-to-clipboard buttons in
-                        // its Network/Console tools — same class of problem
-                        // as the CSP style block, same fix.
-                        || lower.equals("permissions-policy") || lower.equals("feature-policy")
-                        || lower.equals("content-encoding") || lower.equals("content-length")
-                        || lower.equals("transfer-encoding")) {
+                if (STRIPPED_RESPONSE_HEADERS.contains(lower)) {
                     continue;
                 }
                 responseHeaders.put(key, entry.getValue().get(entry.getValue().size() - 1));
