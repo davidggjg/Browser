@@ -252,8 +252,21 @@ public class TabWebViewManager {
         final WebView webView;
         String url;
         String title = "";
-        // Sticky for the tab's lifetime once DevTools has been activated at
-        // least once — see shouldInterceptRequest/injectEruda for why.
+        // Set the instant the user first opens DevTools on this tab. Gates
+        // re-injecting eruda on every subsequent page load — never gates the
+        // network-stack swap below, so it carries no bot-detection risk.
+        boolean devToolsActivated = false;
+        // Only set reactively, after a real check finds eruda's entry button
+        // actually invisible on this exact site (see injectErudaThenVerify).
+        // Most sites don't send a blocking CSP at all, so this stays false
+        // for them and shouldInterceptRequest never reroutes their main
+        // document through fetchWithRelaxedCsp's separate HttpURLConnection —
+        // that separate fetch has a different TLS/HTTP fingerprint than the
+        // WebView's own network stack, and unconditionally taking that path
+        // on every DevTools activation was enough for bot-management edges
+        // (Akamai etc. — mcdonalds.com's _abck/bm_sz cookies confirmed it's
+        // one) to flag the very first request and serve a block/challenge
+        // page in place of the real site the moment DevTools was opened.
         boolean cspRelaxForDevTools = false;
         // Whether the panel itself should auto-show after the *next*
         // injection (a fresh page load resets the in-page JS state, so this
@@ -937,7 +950,7 @@ public class TabWebViewManager {
             // Whether the panel itself pops open again on this particular
             // load additionally depends on devToolsWantOpen, so explicitly
             // closing it and then navigating elsewhere doesn't reopen it.
-            if (tab != null && tab.cspRelaxForDevTools) {
+            if (tab != null && tab.devToolsActivated) {
                 injectEruda(view, tab.devToolsWantOpen);
                 if (tab.devToolsWantOpen && tabId == (activeTabId == null ? -1 : activeTabId)) {
                     devToolsOpen = true;
@@ -1230,28 +1243,69 @@ public class TabWebViewManager {
      * A strict site CSP (style-src without unsafe-inline) makes eruda's
      * shadow-DOM stylesheet get blocked, leaving the panel (and its floating
      * entry-button "extension icon") invisible even though it reports itself
-     * as open — so the *first* activation on a given page load forces one
-     * reload through fetchWithRelaxedCsp, which strips just the CSP
-     * header/meta tag before eruda re-inits and auto-shows. Every toggle
-     * after that — from this menu item or by tapping eruda's own entry
-     * button directly on the page — is a plain JS show()/hide() call with
-     * no reload at all.
+     * as open. The *first* activation on a given page load therefore injects
+     * eruda into the page exactly as it already sits (no reload, no network
+     * change) and then verifies the entry button actually rendered — only
+     * if that check fails do we know this specific site's CSP is the
+     * problem, and only then fall back to one reload through
+     * fetchWithRelaxedCsp, which strips the CSP header/meta tag before
+     * eruda re-inits. Skipping that fetch whenever it isn't needed matters:
+     * it runs on a plain HttpURLConnection with a different TLS/HTTP
+     * fingerprint than the WebView's real network stack, which is enough
+     * for bot-management edges (Akamai etc.) to flag the request and serve
+     * a block/challenge page instead of the real site — confirmed against
+     * mcdonalds.com, which sends no CSP at all yet broke on every DevTools
+     * open before this check existed. Every toggle after the first — from
+     * this menu item or by tapping eruda's own entry button directly on the
+     * page — is a plain JS show()/hide() call with no reload at all.
      */
     public void toggleDevToolsOnActive() {
         Tab t = activeTab();
         if (t == null) {
             return;
         }
-        if (!t.cspRelaxForDevTools) {
+        if (!t.devToolsActivated) {
             devToolsOpen = true;
-            t.cspRelaxForDevTools = true;
+            t.devToolsActivated = true;
             t.devToolsWantOpen = true;
-            t.webView.reload();
+            injectErudaThenVerify(t);
             return;
         }
         devToolsOpen = !devToolsOpen;
         t.devToolsWantOpen = devToolsOpen;
         t.webView.evaluateJavascript(devToolsOpen ? ERUDA_SHOW_JS : ERUDA_HIDE_JS, null);
+    }
+
+    private static final String ERUDA_VISIBLE_CHECK_JS =
+            "(function(){" +
+            "  try {" +
+            "    var c = document.getElementById('eruda');" +
+            "    if (!c || !c.shadowRoot) { return 'false'; }" +
+            "    var btn = c.shadowRoot.querySelector('.eruda-entry-btn');" +
+            "    if (!btn) { return 'false'; }" +
+            "    var r = btn.getBoundingClientRect();" +
+            "    var cs = getComputedStyle(btn);" +
+            "    return (r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none') ? 'true' : 'false';" +
+            "  } catch (e) { return 'false'; }" +
+            "})();";
+
+    private void injectErudaThenVerify(Tab t) {
+        injectEruda(t.webView, true);
+        // eruda.init()/show() finish their DOM work synchronously within the
+        // evaluateJavascript call, but give layout a beat to settle before
+        // measuring — this is just a local visibility check, not a network
+        // wait, so a short delay is plenty.
+        t.webView.postDelayed(() -> {
+            if (tabs.get(t.id) != t || t.cspRelaxForDevTools) {
+                return;
+            }
+            t.webView.evaluateJavascript(ERUDA_VISIBLE_CHECK_JS, value -> {
+                if (!"true".equals(value) && tabs.get(t.id) == t && !t.cspRelaxForDevTools) {
+                    t.cspRelaxForDevTools = true;
+                    t.webView.reload();
+                }
+            });
+        }, 300);
     }
 
     private class TabWebChromeClient extends WebChromeClient {
